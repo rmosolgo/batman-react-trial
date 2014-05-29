@@ -3,7 +3,7 @@ var coffee = require('gulp-coffee');
 var concat = require('gulp-concat');
 
 gulp.task('default', function(){
-  gulp.watch('./**/*', ["build", "html", "finalize"])
+  gulp.watch('./**/*', ["build", "finalize"])
 });
 
 var appSources = ["./coffee/*.coffee"]

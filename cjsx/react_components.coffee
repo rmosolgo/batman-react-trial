@@ -7,15 +7,14 @@ App.AnimalsShowComponent = Batman.createComponent
       <a href={@linkTo('routes.animals')} className='btn btn-primary'>Go back</a>
     </div>
 
-
-
 App.AnimalsIndexComponent = Batman.createComponent
+  displayName: "AnimalsIndexComponent"
   render: ->
     animals = @enumerate "animals", "animal", (animal) ->
       canFly = ""
       if @sourceKeypath('animal.canFly')
         canFly = <span className="text-muted"> (can fly)</span>
-      <li key={animal.get('_batmanID')}>
+      <li>
         <div className="row">
           <div className="col-xs-6">
             <a href={@linkTo("routes.animals[animal]")}>
@@ -36,22 +35,29 @@ App.AnimalsIndexComponent = Batman.createComponent
           </div>
         </div>
       </li>
+    animalsList = ""
+    if animals.length
+      animalsList = <ul className="list-unstyled">{animals}</ul>
 
     <div className="row">
       <h1>
         All Animals
         <small> ({@sourceKeypath("animals.length")})</small>
       </h1>
-      <ul className="list-unstyled">
-        {animals}
-      </ul>
+      {animalsList}
       <p className="row">
         <div className="well">
           <form onSubmit={@handleWith("save", @sourceKeypath('newAnimal'))}>
+            <ul className='list-unstyled'>
+              {@enumerate('newAnimal.errors', 'error', ->
+                <li className='alert alert-danger'>{@sourceKeypath('error.fullMessage')}</li>
+              )}
+            </ul>
             <div className="form-group">
               <label>New Animal:</label>
               <input type="text" className="form-control" value={@sourceKeypath("newAnimal.name")} onChange={@updateKeypath('newAnimal.name')}/>
             </div>
+            <p>Make a new animal: {App.Animal.NAMES.join(", ")}</p>
             <input type="submit" value="Save" className="btn btn-primary"/>
           </form>
         </div>
@@ -84,7 +90,7 @@ App.AnimalsEditComponent = Batman.createComponent
             <div className='form-group'>
               {@enumerate('Animal.CLASSES', 'animalClass', (animalClass) ->
                 return (
-                  <label className='radio-inline'>
+                  <label key={animalClass} className='radio-inline'>
                     {animalClass}
                     <input type='radio' value={animalClass} checked={@sourceKeypath('currentAnimal.animalClass') == animalClass} onChange={@updateKeypath('currentAnimal.animalClass')} />
                   </label>

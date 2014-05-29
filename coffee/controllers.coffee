@@ -37,10 +37,12 @@ class App.AnimalsController extends App.ApplicationController
 
   save: (animal) ->
     wasNew = animal.get('isNew')
-    animal.save =>
-      if wasNew
-        @set 'newAnimal', new App.Animal
-        console.log(@get('newAnimal').toJSON())
-      Batman.redirect("/")
+    animal.save (err, record) =>
+      if err
+        console.log err
+      else
+        if wasNew
+          @set 'newAnimal', new App.Animal
+        Batman.redirect("/")
 
   destroy: (animal) -> animal.destroy()

@@ -9,8 +9,9 @@ App.AnimalsShowComponent = Batman.createComponent({
 });
 
 App.AnimalsIndexComponent = Batman.createComponent({
+  displayName: "AnimalsIndexComponent",
   render: function() {
-    var animals;
+    var animals, animalsList;
     animals = this.enumerate("animals", "animal", function(animal) {
       var canFly;
       canFly = "";
@@ -19,9 +20,7 @@ App.AnimalsIndexComponent = Batman.createComponent({
           "className": "text-muted"
         }, " (can fly)");
       }
-      return React.DOM.li({
-        "key": animal.get('_batmanID')
-      }, React.DOM.div({
+      return React.DOM.li(null, React.DOM.div({
         "className": "row"
       }, React.DOM.div({
         "className": "col-xs-6"
@@ -43,24 +42,34 @@ App.AnimalsIndexComponent = Batman.createComponent({
         "className": "btn btn-danger"
       }, "Destroy"))));
     });
+    animalsList = "";
+    if (animals.length) {
+      animalsList = React.DOM.ul({
+        "className": "list-unstyled"
+      }, animals);
+    }
     return React.DOM.div({
       "className": "row"
-    }, React.DOM.h1(null, "All Animals", React.DOM.small(null, " (", this.sourceKeypath("animals.length"), ")")), React.DOM.ul({
-      "className": "list-unstyled"
-    }, animals), React.DOM.p({
+    }, React.DOM.h1(null, "All Animals", React.DOM.small(null, " (", this.sourceKeypath("animals.length"), ")")), animalsList, React.DOM.p({
       "className": "row"
     }, React.DOM.div({
       "className": "well"
     }, React.DOM.form({
       "onSubmit": this.handleWith("save", this.sourceKeypath('newAnimal'))
-    }, React.DOM.div({
+    }, React.DOM.ul({
+      "className": 'list-unstyled'
+    }, this.enumerate('newAnimal.errors', 'error', function() {
+      return React.DOM.li({
+        "className": 'alert alert-danger'
+      }, this.sourceKeypath('error.fullMessage'));
+    })), React.DOM.div({
       "className": "form-group"
     }, React.DOM.label(null, "New Animal:"), React.DOM.input({
       "type": "text",
       "className": "form-control",
       "value": this.sourceKeypath("newAnimal.name"),
       "onChange": this.updateKeypath('newAnimal.name')
-    })), React.DOM.input({
+    })), React.DOM.p(null, "Make a new animal: ", App.Animal.NAMES.join(", ")), React.DOM.input({
       "type": "submit",
       "value": "Save",
       "className": "btn btn-primary"
@@ -96,6 +105,7 @@ App.AnimalsEditComponent = Batman.createComponent({
       "className": 'form-group'
     }, this.enumerate('Animal.CLASSES', 'animalClass', function(animalClass) {
       return React.DOM.label({
+        "key": animalClass,
         "className": 'radio-inline'
       }, animalClass, React.DOM.input({
         "type": 'radio',

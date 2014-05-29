@@ -1,41 +1,8 @@
 (function() {
-  var __hasProp = {}.hasOwnProperty,
+  var BatmanReactDebug, reactDebug,
+    __hasProp = {}.hasOwnProperty,
     __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
     __slice = [].slice;
-
-  Batman.Controller.prototype.renderReact = function(options) {
-    var action, component, componentClass, componentName, existingComponent, frame, targetYield, yieldName, yieldNode, _ref;
-    if (options == null) {
-      options = {};
-    }
-    if (frame = (_ref = this._actionFrames) != null ? _ref[this._actionFrames.length - 1] : void 0) {
-      frame.startOperation();
-    }
-    if (options === false) {
-      frame.finishOperation();
-      return;
-    }
-    action = (frame != null ? frame.action : void 0) || this.get('action');
-    yieldName = options.into || "main";
-    targetYield = Batman.DOM.Yield.withName(yieldName);
-    yieldNode = targetYield.containerNode;
-    componentName = Batman.helpers.camelize("" + (this.get('routingKey')) + "_" + action + "_component");
-    componentClass = Batman.currentApp[componentName];
-    if (!componentClass) {
-      throw "No component for " + componentName + "!";
-    }
-    component = componentClass({
-      controller: this
-    });
-    if (existingComponent = targetYield.get('component')) {
-      console.log("existing component", existingComponent);
-      React.unmountComponentAtNode(yieldNode);
-    }
-    targetYield.set('component', component);
-    React.renderComponent(component, yieldNode);
-    console.log("rendered", componentName);
-    return frame != null ? frame.finishOperation() : void 0;
-  };
 
   Batman.config.pathToApp = window.location.pathname;
 
@@ -68,7 +35,7 @@
       var animal, n, totalAnimals, _i, _len, _ref, _results;
       totalAnimals = App.Animal.get('all.length');
       if (totalAnimals === 0) {
-        _ref = ["Hedgehog", "Starfish", "Echidna"];
+        _ref = ["Spider", "Starfish", "Echidna"];
         _results = [];
         for (_i = 0, _len = _ref.length; _i < _len; _i++) {
           n = _ref[_i];
@@ -89,6 +56,48 @@
     return App.run();
   });
 
+  BatmanReactDebug = true;
+
+  reactDebug = function() {
+    if (BatmanReactDebug) {
+      return console.log.apply(console, arguments);
+    }
+  };
+
+  Batman.Controller.prototype.renderReact = function(options) {
+    var action, component, componentClass, componentName, existingComponent, frame, targetYield, yieldName, yieldNode, _ref;
+    if (options == null) {
+      options = {};
+    }
+    if (frame = (_ref = this._actionFrames) != null ? _ref[this._actionFrames.length - 1] : void 0) {
+      frame.startOperation();
+    }
+    if (options === false) {
+      frame.finishOperation();
+      return;
+    }
+    yieldName = options.into || "main";
+    targetYield = Batman.DOM.Yield.withName(yieldName);
+    yieldNode = targetYield.containerNode;
+    action = (frame != null ? frame.action : void 0) || this.get('action');
+    componentName = Batman.helpers.camelize("" + (this.get('routingKey')) + "_" + action + "_component");
+    componentClass = Batman.currentApp[componentName];
+    if (!componentClass) {
+      throw "No component for " + componentName + "!";
+    }
+    component = componentClass({
+      controller: this
+    });
+    if (existingComponent = targetYield.get('component')) {
+      reactDebug("existing component", existingComponent);
+      React.unmountComponentAtNode(yieldNode);
+    }
+    targetYield.set('component', component);
+    React.renderComponent(component, yieldNode);
+    reactDebug("rendered", componentName);
+    return frame != null ? frame.finishOperation() : void 0;
+  };
+
   Batman.ContextObserver = (function(_super) {
     __extends(ContextObserver, _super);
 
@@ -103,7 +112,7 @@
       if (this.component.isMounted()) {
         return this.component.forceUpdate();
       } else {
-        return console.log("Wasn't mounted", this.component);
+        return reactDebug("Wasn't mounted", this.component);
       }
     };
 
@@ -114,10 +123,10 @@
           var prop;
           prop = new Batman.Keypath(_this.target, keypath).terminalProperty() || new Batman.Keypath(Batman.currentApp, keypath).terminalProperty();
           if (prop == null) {
-            console.warn("" + keypath + " wasn’t found in context for", _this.target);
+            reactDebug("" + keypath + " wasn’t found in context for", _this.target);
           } else {
             prop.observe(function() {
-              console.log("forceUpdate because of " + keypath);
+              reactDebug("forceUpdate because of " + keypath);
               return _this.forceUpdate();
             });
           }
@@ -150,7 +159,7 @@
     ContextObserver.prototype.die = function() {
       this.forEach((function(_this) {
         return function(keypathName, property) {
-          console.log("ContextObserver forgetting " + keypathName);
+          reactDebug("ContextObserver forgetting " + keypathName);
           property.forget(_this.forceUpdate);
           return _this.unset(keypathName);
         };
@@ -186,7 +195,7 @@
                 return e.target.value;
             }
           })();
-          console.log("updating " + keypath + " to: ", value);
+          reactDebug("updating " + keypath + " to: ", value);
           return _this._observer.setContext(keypath, value);
         };
       })(this);
@@ -198,7 +207,7 @@
       var target;
       props || (props = this.props);
       target = props.target || props.controller;
-      console.log("Observing context with target", target);
+      reactDebug("Observing context with target", target);
       if (this._observer) {
         this._observer.die();
       }
@@ -230,8 +239,10 @@
       })(this);
     },
     enumerate: function(setName, itemName, generator) {
-      var components, controller, displayName, iterationComponent, outerContext, render, set;
+      var components, controller, displayName, iterationComponent, outerContext, render, set, _getKey;
+      _getKey = this._getEnumerateKey;
       set = this.sourceKeypath(setName);
+      this.sourceKeypath("" + setName + ".toArray");
       displayName = Batman.helpers.camelize("enumerate_" + itemName + "_in_" + setName);
       render = function() {
         return generator.call(this, this.props.item);
@@ -243,19 +254,27 @@
       outerContext = this._observer.get("context");
       controller = this.props.controller;
       components = set.map(function(item) {
-        var innerContext, innerProps, target;
+        var innerContext, innerProps, key, target;
         innerContext = Batman.extend({}, outerContext);
         innerContext[itemName] = item;
-        console.log("innerContext", innerContext);
         target = new Batman.Hash(innerContext);
+        key = _getKey(item);
         innerProps = {
           controller: controller,
           target: target,
-          item: item
+          item: item,
+          key: key
         };
         return iterationComponent(innerProps);
       });
       return components;
+    },
+    _getEnumerateKey: function(item) {
+      if (item.hashKey != null) {
+        return item.hashKey();
+      } else {
+        return JSON.stringify(item);
+      }
     },
     linkTo: function(routeQuery) {
       var base, obj, part, parts, path, _i, _len;
@@ -275,7 +294,6 @@
         }
         path = base.get('path');
       }
-      console.log("" + routeQuery + " became " + path);
       return Batman.navigator.linkTo(path);
     }
   };
@@ -368,12 +386,15 @@
       var wasNew;
       wasNew = animal.get('isNew');
       return animal.save((function(_this) {
-        return function() {
-          if (wasNew) {
-            _this.set('newAnimal', new App.Animal);
-            console.log(_this.get('newAnimal').toJSON());
+        return function(err, record) {
+          if (err) {
+            return console.log(err);
+          } else {
+            if (wasNew) {
+              _this.set('newAnimal', new App.Animal);
+            }
+            return Batman.redirect("/");
           }
-          return Batman.redirect("/");
         };
       })(this));
     };
@@ -395,6 +416,8 @@
 
     Animal.resourceName = 'animal';
 
+    Animal.NAMES = ["Echidna", "Snail", "Shark", "Starfish", "Parakeet", "Clam", "Dolphin", "Gorilla", "Elephant", "Spider"];
+
     Animal.COLORS = ["red", "green", "blue", "brown", "black", "yellow", "gray", "orange"].sort();
 
     Animal.CLASSES = ["Mammal", "Fish", "Reptile", "Bird", "Amphibian", "Invertibrate"];
@@ -403,48 +426,14 @@
 
     Animal.encode('name', 'canFly', 'animalClass', 'color');
 
+    Animal.validate('name', {
+      inclusion: {
+        "in": Animal.NAMES
+      }
+    });
+
     return Animal;
 
   })(Batman.Model);
-
-  App.AnimalsIndexView = (function(_super) {
-    __extends(AnimalsIndexView, _super);
-
-    function AnimalsIndexView() {
-      return AnimalsIndexView.__super__.constructor.apply(this, arguments);
-    }
-
-    AnimalsIndexView.prototype.saveAnimal = function(animal) {
-      return animal.save((function(_this) {
-        return function(err, r) {
-          return _this.set('newAnimal', new App.Animal);
-        };
-      })(this));
-    };
-
-    AnimalsIndexView.prototype.destroyAnimal = function(animal) {
-      return animal.destroy();
-    };
-
-    return AnimalsIndexView;
-
-  })(Batman.View);
-
-  App.AnimalsEditView = (function(_super) {
-    __extends(AnimalsEditView, _super);
-
-    function AnimalsEditView() {
-      return AnimalsEditView.__super__.constructor.apply(this, arguments);
-    }
-
-    AnimalsEditView.prototype.saveAnimal = function(animal) {
-      return animal.save(function() {
-        return Batman.redirect("/");
-      });
-    };
-
-    return AnimalsEditView;
-
-  })(Batman.View);
 
 }).call(this);
