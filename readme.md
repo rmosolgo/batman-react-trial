@@ -1,12 +1,20 @@
-# Rendering Batman.js Views into Modal
+# Batman.js & React
 
-This is a working example of using the Bootstrap modal with batman.js.
+- Get [batman.js](http://batmanjs.org) rendering [react](http://reactjs.com) components
+- [Live on firebase](https://batman-react.firebaseapp.com/)
 
-To render into a modal:
+The good stuff is in `/coffee/batman.react.coffee`:
 
-- Set up a [`data-yield='modal'`](https://gist.github.com/rmosolgo/10606481#file-index-html-L15).
-- [Observe `Batman.DOM.Yield.get('yields.modal.contentView')`](https://gist.github.com/rmosolgo/10606481#file-application-coffee-L13) for when a view is rendered. Open the modal inside that observer.
-- Create a function on ApplicationController to [close the dialog and `die` the view](https://gist.github.com/rmosolgo/10606481#file-application-coffee-L28) and [add it as a `beforeAction`](https://gist.github.com/rmosolgo/10606481#file-application-coffee-L34).
-- For actions which should render into the modal, explicitly render: [`@render(into: 'modal')`](https://gist.github.com/rmosolgo/10606481#file-application-coffee-L44). The modal will be opened automatically by the observer.
+- `Batman.Controller::renderReact` for looking up and rendering components
+- `Batman.ContextObserver` for keeping batman.js and react in sync
+- `Batman.ReactMixin` for implementing some simple bindings
+- `Batman.createComponent` as shorthand for mixing in the bindings
 
-For more batman.js recipes, see the [Batman.js MVC Cookbook](https://www.softcover.io/books/69/redirect)!
+See examples in `/cjsx/react_components.coffee`
+
+
+Development:
+
+- `$ gulp`
+- `$ harp server`
+- `$ cjsx -cbw -o build/ cjsx/`
