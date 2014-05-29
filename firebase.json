@@ -1,0 +1,9 @@
+{
+  "firebase": "batman-react",
+  "public": ".",
+  "ignore": [
+    "firebase.json",
+    ".*",
+    "**/node_modules/**"
+  ]
+}

@@ -1,8 +1,6 @@
 var gulp = require('gulp');
 var coffee = require('gulp-coffee');
 var concat = require('gulp-concat');
-var jade = require('gulp-jade');
-var batmanTemplates = require("gulp-batman-templates")
 
 gulp.task('default', function(){
   gulp.watch('./**/*', ["build", "html", "finalize"])
@@ -23,16 +21,8 @@ gulp.task("build", function(){
 
 })
 
-gulp.task("html", function(){
-  gulp.src(["./html/**/*.jade"])
-    .pipe(jade())
-    .pipe(batmanTemplates())
-    .pipe(concat('templates.js'))
-    .pipe(gulp.dest("./build/"))
-})
-
 gulp.task("finalize", function() {
-  gulp.src(["./build/app.js", "./build/templates.js"])
+  gulp.src(["./build/app.js", "./build/react_components.js"])
     .pipe(concat("application.js"))
     .pipe(gulp.dest("./"))
 });
