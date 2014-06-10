@@ -1,9 +1,10 @@
 var gulp = require('gulp');
 var coffee = require('gulp-coffee');
 var concat = require('gulp-concat');
+var shell = require('gulp-shell');
 
-gulp.task('default', function(){
-  gulp.watch('./**/*', ["build", "finalize"])
+gulp.task('default', ['server'], function(){
+  gulp.watch('./**/*', ["cjsx", "build", "finalize"])
 });
 
 var appSources = ["./coffee/*.coffee"]
@@ -26,3 +27,11 @@ gulp.task("finalize", function() {
     .pipe(concat("application.js"))
     .pipe(gulp.dest("./"))
 });
+
+gulp.task("cjsx", shell.task(["cjsx -cbw -o build/ cjsx/"]))
+
+gulp.task("server", function(){
+  gulp.src("")
+    .pipe(shell(["harp server"]))
+  return true
+})

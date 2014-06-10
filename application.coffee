@@ -31,8 +31,8 @@ $ -> App.run()
 # Batman.ReactMixin
 # Batman.createComponent
 
-BatmanReactDebug = true
-reactDebug = ->
+@BatmanReactDebug = false
+@reactDebug = ->
   if BatmanReactDebug
     console.log(arguments...)
 
@@ -47,6 +47,7 @@ Batman.Controller::renderReact = (options={}) ->
 
   yieldName = options.into || "main"
   targetYield = Batman.DOM.Yield.withName(yieldName)
+
   yieldNode = targetYield.containerNode
 
   # look up the component by name
@@ -62,6 +63,17 @@ Batman.Controller::renderReact = (options={}) ->
     reactDebug("existing component", existingComponent)
     React.unmountComponentAtNode(yieldNode)
   targetYield.set('component', component)
+
+  # clean up an existing view if there is one
+  if view = targetYield.get('contentView')
+    view.die()
+    targetYield.unset('contentView')
+
+  # if a batman.view gets rendered here, remove the component
+  targetYield.observeOnce 'contentView', (nv, ov) ->
+    if nv?
+      React.unmountComponentAtNode(@containerNode)
+
   React.renderComponent(component, yieldNode)
   reactDebug "rendered", componentName
   frame?.finishOperation()
@@ -73,28 +85,52 @@ class Batman.ContextObserver extends Batman.Hash
       @forceUpdate = @_forceUpdate.bind(@)
       @on "changed", @forceUpdate
 
+  _targets: ->
+    [@target, Batman.currentApp]
+
   _forceUpdate: ->
     if @component.isMounted()
       @component.forceUpdate()
     else
       reactDebug "Wasn't mounted", @component
 
-  _property: (keypath) ->
-    property = @getOrSet keypath, =>
-      prop = new Batman.Keypath(@target, keypath).terminalProperty() || new Batman.Keypath(Batman.currentApp, keypath).terminalProperty()
-      # console.log keypath, prop?.base, prop?.key
-      if !prop?
-        reactDebug "#{keypath} wasn’t found in context for", @target
-      else
-        prop.observe =>
-          reactDebug "forceUpdate because of #{keypath}"
-          @forceUpdate()
-        # console.log keypath, 'found', prop.getValue()
-      prop
-    property
+  _baseForKeypath: (keypath) ->
+    segmentPath = ""
+    for segment in keypath.split(".")
+      segmentPath += segment
+      for target in @_targets()
+        if typeof target.get(segmentPath) isnt "undefined"
+          return target
+    undefined
 
-  getContext: (keypath) -> @_property(keypath)?.getValue()
-  setContext: (keypath, value) -> @_property(keypath).setValue(value)
+  _observeKeypath: (keypath) ->
+    base = @_baseForKeypath(keypath)
+    prop = base.property(keypath)
+    @set(keypath, prop)
+    prop.observe(@forceUpdate)
+    reactDebug("Observing #{prop.key} on", prop.base)
+    prop.observe ->
+      reactDebug "forceUpdate because of #{prop.key}"
+
+  getContext: (keypath) ->
+    base = @_baseForKeypath(keypath)
+    if !base
+      console.warn("Nothing found for #{keypath}")
+      return
+    prop = Batman.Property.forBaseAndKey(base, keypath)
+    @_observeKeypath(keypath) if prop?
+
+    value = prop?.getValue()
+    # for example, if you look up a function relative to currentApp, `this` is gonna get all messed up when you call it again.
+    if Batman.typeOf(value) is "Function"
+      terminal = new Batman.Keypath(base, keypath).terminalProperty()
+      value = value.bind(terminal.base)
+    value
+
+  setContext: (keypath, value) ->
+    base = @_baseForKeypath(keypath)
+    Batman.Property.forBaseAndKey(base, keypath)?.setValue(value)
+
   @accessor 'context', ->
     ctx = {}
     @forEach (key, value) =>
@@ -104,10 +140,35 @@ class Batman.ContextObserver extends Batman.Hash
   die: ->
     @forEach (keypathName, property) =>
       reactDebug "ContextObserver forgetting #{keypathName}"
-      property.forget @forceUpdate
+      property?.forget(@forceUpdate)
       @unset(keypathName)
     @off()
     @forget()
+
+Batman.createComponent = (options) ->
+  options.mixins = options.mixins or []
+  options.mixins.push Batman.ReactMixin
+  React.createClass options
+Batman.DOM.reactReaders =
+  bind: (tagName, tagObject, value) ->
+    switch tagName
+      when "span"
+        contentValue = tagObject._owner.sourceKeypath(value)
+        if tagObject.isMounted()
+          tagObject.setProps(children: contentValue)
+        else
+          tagObject.props.children = [contentValue]
+
+for tagName, tagFunc of React.DOM
+  do (tagName, tagFunc) ->
+    Batman.DOM[tagName] = (props, children...) ->
+      tagObject = tagFunc.call(React.DOM, props, children...)
+      for key, value of props when key.substr(0,5) is "data-"
+        [prefix, bindingName, attrArg] = key.split("-")
+        bindingFunc = Batman.DOM.reactReaders[bindingName]
+        bindingFunc(tagName, tagObject, value, attrArg)
+      tagObject
+
 
 Batman.ReactMixin =
   getInitialState: ->
@@ -119,7 +180,16 @@ Batman.ReactMixin =
   componentWillUnmount: ->
     @_observer.die()
 
+  _contextualize: (keypath) ->
+    return keypath unless @dataContext?
+    parts =  keypath.split(/\./)
+    firstPart = parts.shift()
+    contextualizedFirstPart = @dataContext[firstPart] || firstPart
+    parts.unshift(contextualizedFirstPart)
+    parts.join(".")
+
   updateKeypath: (keypath) ->
+    keypath = @_contextualize(keypath)
     (e) =>
       value = switch e.target.type.toUpperCase()
         when "CHECKBOX" then e.target.checked
@@ -128,11 +198,11 @@ Batman.ReactMixin =
       @_observer.setContext keypath, value
 
   sourceKeypath: (keypath) ->
-    @_observer.getContext keypath
+    @_observer.getContext(@_contextualize(keypath))
 
   _observeContext: (props) ->
     props ||= @props
-    target = props.target or props.controller
+    target = props.target || props.controller
     reactDebug "Observing context with target", target
     @_observer.die() if @_observer
     @_observer = new Batman.ContextObserver(target: target, component: this)
@@ -144,25 +214,26 @@ Batman.ReactMixin =
       @props.controller.executeAction(actionName, actionParams)
 
   handleWith: (handlerName, withArguments...) ->
+    handler = @sourceKeypath(handlerName)
     (e) =>
       e.preventDefault()
       callArgs = withArguments or [e]
-      @props.controller[handlerName].apply @props.controller, callArgs
+      handler(callArgs...)
 
   enumerate: (setName, itemName, generator) ->
     _getKey = @_getEnumerateKey
     set = @sourceKeypath(setName)
     @sourceKeypath("#{setName}.toArray")
-    displayName = Batman.helpers.camelize("enumerate_" + itemName + "_in_" + setName)
+    displayName = Batman.helpers.camelize("enumerate_" + itemName + "_in_" + setName.split(".")[0])
     render = ->
-      generator.call this, @props.item
+      generator.call(this, @props.item)
     iterationComponent = Batman.createComponent({render, displayName})
     outerContext = @_observer.get("context")
     controller = @props.controller
     components = set.map (item) ->
       innerContext = Batman.extend({}, outerContext)
       innerContext[itemName] = item
-      target = new Batman.Hash(innerContext)
+      target = new Batman.Object(innerContext)
       key = _getKey(item)
       innerProps = {controller, target, item, key}
       iterationComponent(innerProps)
@@ -181,19 +252,52 @@ Batman.ReactMixin =
       parts = routeQuery.split(/\[/)
       base = Batman.currentApp
       for part in parts
+        # TODO: Allow routes.people[membership.person].edit
         if part.indexOf(']') > -1
-          obj = @sourceKeypath(part.replace(/\]/, ''))
+          [objPart, actionPart] = part.split(/\]\./)
+          obj = @sourceKeypath(objPart)
           base = base.get(obj)
+          base = base.get(actionPart)
         else
           base = base.get(part)
       path = base.get('path')
     Batman.navigator.linkTo(path)
 
+  redirect: (routeQuery) ->
+    path = @linkTo(routeQuery)
+    (e) ->
+      e.stopPropagation()
+      Batman.redirect(path)
 
-Batman.createComponent = (options) ->
-  options.mixins = options.mixins or []
-  options.mixins.push Batman.ReactMixin
-  React.createClass options
+  addClass: (className, keypath, renderFunc) ->
+    val = @sourceKeypath(keypath)
+    node = renderFunc()
+    if val
+      node.className += " #{className}"
+    node
+
+  _showIf: (val, callback) ->
+    if val
+      callback.call(@)
+    else
+      undefined
+
+  showIf: (keypaths..., callback) ->
+    val = true
+    for keypath in keypaths
+      val = val and @sourceKeypath(keypath)
+      if !val
+        return @_showIf(!!val, callback)
+    @_showIf(!!val, callback)
+
+  hideIf: (keypaths..., callback) ->
+    val = true
+    for keypath in keypaths
+      val = val and @sourceKeypath(keypath)
+      if !val
+        return @_showIf(!val, callback)
+    @_showIf(!val, callback)
+
 class App.ApplicationController extends Batman.Controller
   openDialog: ->
     $('.modal').modal('show')

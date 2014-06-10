@@ -1,4 +1,4 @@
-# @cjsx React.DOM
+# @cjsx Batman.DOM
 App.AnimalsShowComponent = Batman.createComponent
   render: ->
     <div>
@@ -77,6 +77,11 @@ App.AnimalsEditComponent = Batman.createComponent
         </div>
         <div className="modal-body">
           <form onSubmit={@handleWith("save", @sourceKeypath('currentAnimal'))}>
+            <ul className='list-unstyled'>
+              {@enumerate('currentAnimal.errors', 'error', ->
+                <li className='alert alert-danger'>{@sourceKeypath('error.fullMessage')}</li>
+              )}
+            </ul>
             <div className="form-group">
               <label>Name</label>
               <input type="text" className="form-control" value={@sourceKeypath("currentAnimal.name")} onChange={@updateKeypath('currentAnimal.name')}/>

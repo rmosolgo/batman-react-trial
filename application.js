@@ -1,5 +1,5 @@
 (function() {
-  var BatmanReactDebug, reactDebug,
+  var tagFunc, tagName, _fn, _ref,
     __hasProp = {}.hasOwnProperty,
     __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
     __slice = [].slice;
@@ -56,16 +56,16 @@
     return App.run();
   });
 
-  BatmanReactDebug = true;
+  this.BatmanReactDebug = false;
 
-  reactDebug = function() {
+  this.reactDebug = function() {
     if (BatmanReactDebug) {
       return console.log.apply(console, arguments);
     }
   };
 
   Batman.Controller.prototype.renderReact = function(options) {
-    var action, component, componentClass, componentName, existingComponent, frame, targetYield, yieldName, yieldNode, _ref;
+    var action, component, componentClass, componentName, existingComponent, frame, targetYield, view, yieldName, yieldNode, _ref;
     if (options == null) {
       options = {};
     }
@@ -93,6 +93,15 @@
       React.unmountComponentAtNode(yieldNode);
     }
     targetYield.set('component', component);
+    if (view = targetYield.get('contentView')) {
+      view.die();
+      targetYield.unset('contentView');
+    }
+    targetYield.observeOnce('contentView', function(nv, ov) {
+      if (nv != null) {
+        return React.unmountComponentAtNode(this.containerNode);
+      }
+    });
     React.renderComponent(component, yieldNode);
     reactDebug("rendered", componentName);
     return frame != null ? frame.finishOperation() : void 0;
@@ -108,6 +117,10 @@
       this.on("changed", this.forceUpdate);
     }
 
+    ContextObserver.prototype._targets = function() {
+      return [this.target, Batman.currentApp];
+    };
+
     ContextObserver.prototype._forceUpdate = function() {
       if (this.component.isMounted()) {
         return this.component.forceUpdate();
@@ -116,33 +129,59 @@
       }
     };
 
-    ContextObserver.prototype._property = function(keypath) {
-      var property;
-      property = this.getOrSet(keypath, (function(_this) {
-        return function() {
-          var prop;
-          prop = new Batman.Keypath(_this.target, keypath).terminalProperty() || new Batman.Keypath(Batman.currentApp, keypath).terminalProperty();
-          if (prop == null) {
-            reactDebug("" + keypath + " wasn’t found in context for", _this.target);
-          } else {
-            prop.observe(function() {
-              reactDebug("forceUpdate because of " + keypath);
-              return _this.forceUpdate();
-            });
+    ContextObserver.prototype._baseForKeypath = function(keypath) {
+      var segment, segmentPath, target, _i, _j, _len, _len1, _ref, _ref1;
+      segmentPath = "";
+      _ref = keypath.split(".");
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        segment = _ref[_i];
+        segmentPath += segment;
+        _ref1 = this._targets();
+        for (_j = 0, _len1 = _ref1.length; _j < _len1; _j++) {
+          target = _ref1[_j];
+          if (typeof target.get(segmentPath) !== "undefined") {
+            return target;
           }
-          return prop;
-        };
-      })(this));
-      return property;
+        }
+      }
+      return void 0;
+    };
+
+    ContextObserver.prototype._observeKeypath = function(keypath) {
+      var base, prop;
+      base = this._baseForKeypath(keypath);
+      prop = base.property(keypath);
+      this.set(keypath, prop);
+      prop.observe(this.forceUpdate);
+      reactDebug("Observing " + prop.key + " on", prop.base);
+      return prop.observe(function() {
+        return reactDebug("forceUpdate because of " + prop.key);
+      });
     };
 
     ContextObserver.prototype.getContext = function(keypath) {
-      var _ref;
-      return (_ref = this._property(keypath)) != null ? _ref.getValue() : void 0;
+      var base, prop, terminal, value;
+      base = this._baseForKeypath(keypath);
+      if (!base) {
+        console.warn("Nothing found for " + keypath);
+        return;
+      }
+      prop = Batman.Property.forBaseAndKey(base, keypath);
+      if (prop != null) {
+        this._observeKeypath(keypath);
+      }
+      value = prop != null ? prop.getValue() : void 0;
+      if (Batman.typeOf(value) === "Function") {
+        terminal = new Batman.Keypath(base, keypath).terminalProperty();
+        value = value.bind(terminal.base);
+      }
+      return value;
     };
 
     ContextObserver.prototype.setContext = function(keypath, value) {
-      return this._property(keypath).setValue(value);
+      var base, _ref;
+      base = this._baseForKeypath(keypath);
+      return (_ref = Batman.Property.forBaseAndKey(base, keypath)) != null ? _ref.setValue(value) : void 0;
     };
 
     ContextObserver.accessor('context', function() {
@@ -160,7 +199,9 @@
       this.forEach((function(_this) {
         return function(keypathName, property) {
           reactDebug("ContextObserver forgetting " + keypathName);
-          property.forget(_this.forceUpdate);
+          if (property != null) {
+            property.forget(_this.forceUpdate);
+          }
           return _this.unset(keypathName);
         };
       })(this));
@@ -171,6 +212,52 @@
     return ContextObserver;
 
   })(Batman.Hash);
+
+  Batman.createComponent = function(options) {
+    options.mixins = options.mixins || [];
+    options.mixins.push(Batman.ReactMixin);
+    return React.createClass(options);
+  };
+
+  Batman.DOM.reactReaders = {
+    bind: function(tagName, tagObject, value) {
+      var contentValue;
+      switch (tagName) {
+        case "span":
+          contentValue = tagObject._owner.sourceKeypath(value);
+          if (tagObject.isMounted()) {
+            return tagObject.setProps({
+              children: contentValue
+            });
+          } else {
+            return tagObject.props.children = [contentValue];
+          }
+      }
+    }
+  };
+
+  _ref = React.DOM;
+  _fn = function(tagName, tagFunc) {
+    return Batman.DOM[tagName] = function() {
+      var attrArg, bindingFunc, bindingName, children, key, prefix, props, tagObject, value, _ref1;
+      props = arguments[0], children = 2 <= arguments.length ? __slice.call(arguments, 1) : [];
+      tagObject = tagFunc.call.apply(tagFunc, [React.DOM, props].concat(__slice.call(children)));
+      for (key in props) {
+        value = props[key];
+        if (!(key.substr(0, 5) === "data-")) {
+          continue;
+        }
+        _ref1 = key.split("-"), prefix = _ref1[0], bindingName = _ref1[1], attrArg = _ref1[2];
+        bindingFunc = Batman.DOM.reactReaders[bindingName];
+        bindingFunc(tagName, tagObject, value, attrArg);
+      }
+      return tagObject;
+    };
+  };
+  for (tagName in _ref) {
+    tagFunc = _ref[tagName];
+    _fn(tagName, tagFunc);
+  }
 
   Batman.ReactMixin = {
     getInitialState: function() {
@@ -183,7 +270,19 @@
     componentWillUnmount: function() {
       return this._observer.die();
     },
+    _contextualize: function(keypath) {
+      var contextualizedFirstPart, firstPart, parts;
+      if (this.dataContext == null) {
+        return keypath;
+      }
+      parts = keypath.split(/\./);
+      firstPart = parts.shift();
+      contextualizedFirstPart = this.dataContext[firstPart] || firstPart;
+      parts.unshift(contextualizedFirstPart);
+      return parts.join(".");
+    },
     updateKeypath: function(keypath) {
+      keypath = this._contextualize(keypath);
       return (function(_this) {
         return function(e) {
           var value;
@@ -201,7 +300,7 @@
       })(this);
     },
     sourceKeypath: function(keypath) {
-      return this._observer.getContext(keypath);
+      return this._observer.getContext(this._contextualize(keypath));
     },
     _observeContext: function(props) {
       var target;
@@ -227,14 +326,15 @@
       })(this);
     },
     handleWith: function() {
-      var handlerName, withArguments;
+      var handler, handlerName, withArguments;
       handlerName = arguments[0], withArguments = 2 <= arguments.length ? __slice.call(arguments, 1) : [];
+      handler = this.sourceKeypath(handlerName);
       return (function(_this) {
         return function(e) {
           var callArgs;
           e.preventDefault();
           callArgs = withArguments || [e];
-          return _this.props.controller[handlerName].apply(_this.props.controller, callArgs);
+          return handler.apply(null, callArgs);
         };
       })(this);
     },
@@ -243,7 +343,7 @@
       _getKey = this._getEnumerateKey;
       set = this.sourceKeypath(setName);
       this.sourceKeypath("" + setName + ".toArray");
-      displayName = Batman.helpers.camelize("enumerate_" + itemName + "_in_" + setName);
+      displayName = Batman.helpers.camelize("enumerate_" + itemName + "_in_" + setName.split(".")[0]);
       render = function() {
         return generator.call(this, this.props.item);
       };
@@ -257,7 +357,7 @@
         var innerContext, innerProps, key, target;
         innerContext = Batman.extend({}, outerContext);
         innerContext[itemName] = item;
-        target = new Batman.Hash(innerContext);
+        target = new Batman.Object(innerContext);
         key = _getKey(item);
         innerProps = {
           controller: controller,
@@ -277,7 +377,7 @@
       }
     },
     linkTo: function(routeQuery) {
-      var base, obj, part, parts, path, _i, _len;
+      var actionPart, base, obj, objPart, part, parts, path, _i, _len, _ref1;
       if (routeQuery.substr(0, 6) !== 'routes') {
         path = routeQuery;
       } else {
@@ -286,8 +386,10 @@
         for (_i = 0, _len = parts.length; _i < _len; _i++) {
           part = parts[_i];
           if (part.indexOf(']') > -1) {
-            obj = this.sourceKeypath(part.replace(/\]/, ''));
+            _ref1 = part.split(/\]\./), objPart = _ref1[0], actionPart = _ref1[1];
+            obj = this.sourceKeypath(objPart);
             base = base.get(obj);
+            base = base.get(actionPart);
           } else {
             base = base.get(part);
           }
@@ -295,13 +397,57 @@
         path = base.get('path');
       }
       return Batman.navigator.linkTo(path);
+    },
+    redirect: function(routeQuery) {
+      var path;
+      path = this.linkTo(routeQuery);
+      return function(e) {
+        e.stopPropagation();
+        return Batman.redirect(path);
+      };
+    },
+    addClass: function(className, keypath, renderFunc) {
+      var node, val;
+      val = this.sourceKeypath(keypath);
+      node = renderFunc();
+      if (val) {
+        node.className += " " + className;
+      }
+      return node;
+    },
+    _showIf: function(val, callback) {
+      if (val) {
+        return callback.call(this);
+      } else {
+        return void 0;
+      }
+    },
+    showIf: function() {
+      var callback, keypath, keypaths, val, _i, _j, _len;
+      keypaths = 2 <= arguments.length ? __slice.call(arguments, 0, _i = arguments.length - 1) : (_i = 0, []), callback = arguments[_i++];
+      val = true;
+      for (_j = 0, _len = keypaths.length; _j < _len; _j++) {
+        keypath = keypaths[_j];
+        val = val && this.sourceKeypath(keypath);
+        if (!val) {
+          return this._showIf(!!val, callback);
+        }
+      }
+      return this._showIf(!!val, callback);
+    },
+    hideIf: function() {
+      var callback, keypath, keypaths, val, _i, _j, _len;
+      keypaths = 2 <= arguments.length ? __slice.call(arguments, 0, _i = arguments.length - 1) : (_i = 0, []), callback = arguments[_i++];
+      val = true;
+      for (_j = 0, _len = keypaths.length; _j < _len; _j++) {
+        keypath = keypaths[_j];
+        val = val && this.sourceKeypath(keypath);
+        if (!val) {
+          return this._showIf(!val, callback);
+        }
+      }
+      return this._showIf(!val, callback);
     }
-  };
-
-  Batman.createComponent = function(options) {
-    options.mixins = options.mixins || [];
-    options.mixins.push(Batman.ReactMixin);
-    return React.createClass(options);
   };
 
   App.ApplicationController = (function(_super) {
@@ -316,11 +462,11 @@
     };
 
     ApplicationController.prototype.closeDialog = function() {
-      var modalYield, _ref;
+      var modalYield, _ref1;
       $('.modal').modal('hide');
       modalYield = Batman.DOM.Yield.get('yields.modal');
-      if ((_ref = modalYield.get('contentView')) != null) {
-        _ref.die();
+      if ((_ref1 = modalYield.get('contentView')) != null) {
+        _ref1.die();
       }
       return modalYield.set('contentView', void 0);
     };
@@ -441,7 +587,7 @@
 // Generated by CoffeeScript undefined
 App.AnimalsShowComponent = Batman.createComponent({
   render: function() {
-    return React.DOM.div(null, React.DOM.h1(null, this.sourceKeypath('animal.name')), React.DOM.p(null, "This is just an example of routing."), React.DOM.a({
+    return Batman.DOM.div(null, Batman.DOM.h1(null, this.sourceKeypath('animal.name')), Batman.DOM.p(null, "This is just an example of routing."), Batman.DOM.a({
       "href": this.linkTo('routes.animals'),
       "className": 'btn btn-primary'
     }, "Go back"));
@@ -456,60 +602,60 @@ App.AnimalsIndexComponent = Batman.createComponent({
       var canFly;
       canFly = "";
       if (this.sourceKeypath('animal.canFly')) {
-        canFly = React.DOM.span({
+        canFly = Batman.DOM.span({
           "className": "text-muted"
         }, " (can fly)");
       }
-      return React.DOM.li(null, React.DOM.div({
+      return Batman.DOM.li(null, Batman.DOM.div({
         "className": "row"
-      }, React.DOM.div({
+      }, Batman.DOM.div({
         "className": "col-xs-6"
-      }, React.DOM.a({
+      }, Batman.DOM.a({
         "href": this.linkTo("routes.animals[animal]")
-      }, React.DOM.p({
+      }, Batman.DOM.p({
         "className": "lead"
-      }, this.sourceKeypath('animal.name'), canFly))), React.DOM.div({
+      }, this.sourceKeypath('animal.name'), canFly))), Batman.DOM.div({
         "className": "col-xs-2"
-      }, React.DOM.small(null, this.sourceKeypath("animal.animalClass"))), React.DOM.div({
+      }, Batman.DOM.small(null, this.sourceKeypath("animal.animalClass"))), Batman.DOM.div({
         "className": "col-xs-2"
-      }, React.DOM.button({
+      }, Batman.DOM.button({
         "onClick": this.executeAction("edit", animal),
         "className": "btn"
-      }, "Edit in Dialog")), React.DOM.div({
+      }, "Edit in Dialog")), Batman.DOM.div({
         "className": "col-xs-2"
-      }, React.DOM.button({
+      }, Batman.DOM.button({
         "onClick": this.handleWith("destroy", animal),
         "className": "btn btn-danger"
       }, "Destroy"))));
     });
     animalsList = "";
     if (animals.length) {
-      animalsList = React.DOM.ul({
+      animalsList = Batman.DOM.ul({
         "className": "list-unstyled"
       }, animals);
     }
-    return React.DOM.div({
+    return Batman.DOM.div({
       "className": "row"
-    }, React.DOM.h1(null, "All Animals", React.DOM.small(null, " (", this.sourceKeypath("animals.length"), ")")), animalsList, React.DOM.p({
+    }, Batman.DOM.h1(null, "All Animals", Batman.DOM.small(null, " (", this.sourceKeypath("animals.length"), ")")), animalsList, Batman.DOM.p({
       "className": "row"
-    }, React.DOM.div({
+    }, Batman.DOM.div({
       "className": "well"
-    }, React.DOM.form({
+    }, Batman.DOM.form({
       "onSubmit": this.handleWith("save", this.sourceKeypath('newAnimal'))
-    }, React.DOM.ul({
+    }, Batman.DOM.ul({
       "className": 'list-unstyled'
     }, this.enumerate('newAnimal.errors', 'error', function() {
-      return React.DOM.li({
+      return Batman.DOM.li({
         "className": 'alert alert-danger'
       }, this.sourceKeypath('error.fullMessage'));
-    })), React.DOM.div({
+    })), Batman.DOM.div({
       "className": "form-group"
-    }, React.DOM.label(null, "New Animal:"), React.DOM.input({
+    }, Batman.DOM.label(null, "New Animal:"), Batman.DOM.input({
       "type": "text",
       "className": "form-control",
       "value": this.sourceKeypath("newAnimal.name"),
       "onChange": this.updateKeypath('newAnimal.name')
-    })), React.DOM.p(null, "Make a new animal: ", App.Animal.NAMES.join(", ")), React.DOM.input({
+    })), Batman.DOM.p(null, "Make a new animal: ", App.Animal.NAMES.join(", ")), Batman.DOM.input({
       "type": "submit",
       "value": "Save",
       "className": "btn btn-primary"
@@ -519,58 +665,64 @@ App.AnimalsIndexComponent = Batman.createComponent({
 
 App.AnimalsEditComponent = Batman.createComponent({
   render: function() {
-    return React.DOM.div(null, React.DOM.div({
+    return Batman.DOM.div(null, Batman.DOM.div({
       "className": "modal-header"
-    }, React.DOM.h2({
+    }, Batman.DOM.h2({
       "className": "modal-title"
-    }, React.DOM.span(null, "Edit"), React.DOM.span(null, " ", this.sourceKeypath("currentAnimal.name")))), React.DOM.div({
+    }, Batman.DOM.span(null, "Edit"), Batman.DOM.span(null, " ", this.sourceKeypath("currentAnimal.name")))), Batman.DOM.div({
       "className": "modal-body"
-    }, React.DOM.form({
+    }, Batman.DOM.form({
       "onSubmit": this.handleWith("save", this.sourceKeypath('currentAnimal'))
-    }, React.DOM.div({
+    }, Batman.DOM.ul({
+      "className": 'list-unstyled'
+    }, this.enumerate('currentAnimal.errors', 'error', function() {
+      return Batman.DOM.li({
+        "className": 'alert alert-danger'
+      }, this.sourceKeypath('error.fullMessage'));
+    })), Batman.DOM.div({
       "className": "form-group"
-    }, React.DOM.label(null, "Name"), React.DOM.input({
+    }, Batman.DOM.label(null, "Name"), Batman.DOM.input({
       "type": "text",
       "className": "form-control",
       "value": this.sourceKeypath("currentAnimal.name"),
       "onChange": this.updateKeypath('currentAnimal.name')
-    })), React.DOM.div({
+    })), Batman.DOM.div({
       "className": "checkbox"
-    }, React.DOM.label(null, "Can Fly?", React.DOM.input({
+    }, Batman.DOM.label(null, "Can Fly?", Batman.DOM.input({
       "type": "checkbox",
       "className": 'checkbox',
       "checked": this.sourceKeypath("currentAnimal.canFly"),
       "onChange": this.updateKeypath('currentAnimal.canFly')
-    }))), React.DOM.div({
+    }))), Batman.DOM.div({
       "className": 'form-group'
     }, this.enumerate('Animal.CLASSES', 'animalClass', function(animalClass) {
-      return React.DOM.label({
+      return Batman.DOM.label({
         "key": animalClass,
         "className": 'radio-inline'
-      }, animalClass, React.DOM.input({
+      }, animalClass, Batman.DOM.input({
         "type": 'radio',
         "value": animalClass,
         "checked": this.sourceKeypath('currentAnimal.animalClass') === animalClass,
         "onChange": this.updateKeypath('currentAnimal.animalClass')
       }));
-    })), React.DOM.div({
+    })), Batman.DOM.div({
       "className": 'form-group'
-    }, React.DOM.label(null, "Color:"), React.DOM.select({
+    }, Batman.DOM.label(null, "Color:"), Batman.DOM.select({
       "className": 'form-control',
       "value": this.sourceKeypath("currentAnimal.color"),
       "onChange": this.updateKeypath("currentAnimal.color")
     }, this.enumerate("Animal.COLORS", 'color', function(color) {
-      return React.DOM.option({
+      return Batman.DOM.option({
         "key": color,
         "value": color
       }, color);
-    }))), React.DOM.input({
+    }))), Batman.DOM.input({
       "type": "submit",
       "value": "Save",
       "className": "btn btn-success"
-    }))), React.DOM.div({
+    }))), Batman.DOM.div({
       "className": "modal-footer"
-    }, React.DOM.button({
+    }, Batman.DOM.button({
       "onClick": this.handleWith("closeDialog"),
       "className": "btn"
     }, "Close")));
