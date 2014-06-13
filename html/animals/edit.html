@@ -1,0 +1,43 @@
+<div>
+  <div class="modal-header">
+    <h2 class="modal-title">
+      <span>Edit </span>
+      <span data-bind="currentAnimal.name"></span>
+    </h2>
+  </div>
+  <div class="modal-body">
+    <form data-event-submit="save | withArguments currentAnimal">
+      <ul class='list-unstyled'>
+        <li class='alert alert-danger' data-foreach-error='currentAnimal.errors'>
+          <span data-bind='error.fullMessage'></span>
+        </li>
+      </ul>
+      <div class="form-group">
+        <label>Name</label>
+        <input type="text" class="form-control" data-bind="currentAnimal.name"/>
+      </div>
+      <div class="checkbox">
+        <label>
+          Can Fly?
+          <input type="checkbox" class='checkbox' data-bind='currentAnimal.canFly' />
+        </label>
+      </div>
+      <div class='form-group'>
+        <label data-foreach-animalclass='Animal.CLASSES' class='radio-inline'>
+          <span data-bind='animalclass'></span>
+          <input type='radio' data-bind-value='animalclass' data-bind='currentAnimal.animalClass' />
+        </label>
+      </div>
+      <div class='form-group'>
+        <label>Color:</label>
+        <select class='form-control' data-bind="currentAnimal.color">
+          <option data-foreach-color='Animal.COLORS' data-bind-value='color' data-bind='color'></option>
+        </select>
+      </div>
+      <input type="submit" value="Save" class="btn btn-success" />
+    </form>
+  </div>
+  <div class="modal-footer">
+    <button data-event-click='closeDialog' class="btn">Close</button>
+  </div>
+</div>

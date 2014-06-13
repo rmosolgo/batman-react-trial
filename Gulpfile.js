@@ -4,10 +4,10 @@ var concat = require('gulp-concat');
 var shell = require('gulp-shell');
 
 gulp.task('default', ['server'], function(){
-  gulp.watch('./**/*', ["cjsx", "build", "finalize"])
+  gulp.watch('./**/*', ["build", "finalize"])
 });
 
-var appSources = ["./coffee/*.coffee"]
+var appSources = ["./coffee/bindings/*.coffee","./coffee/react/*.coffee", "./coffee/*.coffee"]
 
 gulp.task("build", function(){
   gulp.src(appSources)
@@ -23,12 +23,12 @@ gulp.task("build", function(){
 })
 
 gulp.task("finalize", function() {
-  gulp.src(["./build/app.js", "./build/react_components.js"])
+  gulp.src(["./build/app.js"])
     .pipe(concat("application.js"))
     .pipe(gulp.dest("./"))
 });
 
-gulp.task("cjsx", shell.task(["cjsx -cbw -o build/ cjsx/"]))
+// gulp.task("cjsx", shell.task(["cjsx -cbw -o build/ cjsx/"]))
 
 gulp.task("server", function(){
   gulp.src("")

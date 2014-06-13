@@ -32,8 +32,7 @@ class App.AnimalsController extends App.ApplicationController
     App.Animal.find params.id, (err, record) =>
       throw err if err
       @set 'animal', record
-      @renderReact()
-    @render(false)
+    @renderReact()
 
   save: (animal) ->
     wasNew = animal.get('isNew')

@@ -11,13 +11,14 @@ class @App extends Batman.App
     App.Animal.load()
     setTimeout =>
         @_seedData()
-      , 2000
+      , 5000
     Batman.redirect("/")
 
   # Just to make things interesting, make some Animals
   @_seedData: ->
     totalAnimals = App.Animal.get('all.length')
     if totalAnimals is 0
+      console.log "No data found, running seeds!"
       for n in ["Spider", "Starfish", "Echidna"]
         animal = new App.Animal(name: n)
         animal.save()

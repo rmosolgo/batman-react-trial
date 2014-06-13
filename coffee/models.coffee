@@ -6,3 +6,5 @@ class App.Animal extends Batman.Model
   @persist BatFire.Storage
   @encode 'name', 'canFly', 'animalClass', 'color'
   @validate 'name', inclusion: { in: @NAMES }
+
+  @accessor 'toString', -> "#{@get('name')} #{@get('animalClass')}"

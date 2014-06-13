@@ -1,62 +1,513 @@
 (function() {
-  var tagFunc, tagName, _fn, _ref,
+  var cloneComponent, reactComponentForRoutingKeyAndAction, safelySetProps, tagFunc, tagName, _base, _base1, _fn, _ref,
     __hasProp = {}.hasOwnProperty,
     __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
     __slice = [].slice;
 
-  Batman.config.pathToApp = window.location.pathname;
+  (_base = Batman.DOM).React || (_base.React = {});
 
-  Batman.config.usePushState = false;
+  Batman.DOM.React.AbstractBinding = (function(_super) {
+    var get_dot_rx, get_rx, keypath_rx, onlyAll, onlyData, onlyNode;
 
-  this.App = (function(_super) {
-    __extends(App, _super);
+    __extends(AbstractBinding, _super);
 
-    function App() {
-      return App.__super__.constructor.apply(this, arguments);
-    }
+    keypath_rx = /(^|,)\s*(?:(true|false)|("[^"]*")|(\{[^\}]*\})|(([0-9\_\-]+[a-zA-Z\_\-]|[a-zA-Z])[\w\-\.\?\!\+]*))\s*(?=$|,)/g;
 
-    App.root('animals#index');
+    get_dot_rx = /(?:\]\.)(.+?)(?=[\[\.]|\s*\||$)/;
 
-    App.resources('animals');
+    get_rx = /(?!^\s*)\[(.*?)\]/g;
 
-    App.syncsWithFirebase('batman-react');
-
-    App.on('run', function() {
-      App.Animal.load();
-      setTimeout((function(_this) {
-        return function() {
-          return _this._seedData();
-        };
-      })(this), 2000);
-      return Batman.redirect("/");
+    AbstractBinding.accessor('filteredValue', {
+      get: function() {
+        var result, self, unfilteredValue;
+        unfilteredValue = this.get('unfilteredValue');
+        self = this;
+        if (this.filterFunctions.length > 0) {
+          result = this.filterFunctions.reduce(function(value, fn, i) {
+            var args;
+            args = self.filterArguments[i].map(function(argument) {
+              if (argument._keypath) {
+                return self.lookupKeypath(argument._keypath);
+              } else {
+                return argument;
+              }
+            });
+            args.unshift(value);
+            while (args.length < (fn.length - 1)) {
+              args.push(void 0);
+            }
+            args.push(self);
+            return fn.apply(self.view, args);
+          }, unfilteredValue);
+          return result;
+        } else {
+          return unfilteredValue;
+        }
+      },
+      set: function(_, newValue) {
+        return this.set('unfilteredValue', newValue);
+      }
     });
 
-    App._seedData = function() {
-      var animal, n, totalAnimals, _i, _len, _ref, _results;
-      totalAnimals = App.Animal.get('all.length');
-      if (totalAnimals === 0) {
-        _ref = ["Spider", "Starfish", "Echidna"];
-        _results = [];
-        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-          n = _ref[_i];
-          animal = new App.Animal({
-            name: n
-          });
-          _results.push(animal.save());
+    AbstractBinding.accessor('unfilteredValue', {
+      get: function() {
+        return this._unfilteredValue(this.get('key'));
+      },
+      set: function(_, value) {
+        var k;
+        if (k = this.get('key')) {
+          return this.view.setKeypath(k, value);
+        } else {
+          return this.set('value', value);
         }
-        return _results;
+      }
+    });
+
+    AbstractBinding.prototype._unfilteredValue = function(key) {
+      if (key) {
+        return this.lookupKeypath(key);
+      } else {
+        return this.get('value');
       }
     };
 
-    return App;
+    AbstractBinding.prototype.lookupKeypath = function(keypath) {
+      return this.parentComponent.sourceKeypath(keypath);
+    };
 
-  })(Batman.App);
+    onlyAll = Batman.BindingDefinitionOnlyObserve.All;
 
-  $(function() {
-    return App.run();
-  });
+    onlyData = Batman.BindingDefinitionOnlyObserve.Data;
 
-  this.BatmanReactDebug = false;
+    onlyNode = Batman.BindingDefinitionOnlyObserve.Node;
+
+    AbstractBinding.prototype.bindImmediately = true;
+
+    AbstractBinding.prototype.shouldSet = true;
+
+    AbstractBinding.prototype.isInputBinding = false;
+
+    AbstractBinding.prototype.escapeValue = true;
+
+    AbstractBinding.prototype.onlyObserve = onlyAll;
+
+    AbstractBinding.prototype.skipParseFilter = false;
+
+    function AbstractBinding(tagObject, bindingName, keypath, attrArg) {
+      var rawTagName;
+      this.tagObject = tagObject;
+      this.bindingName = bindingName;
+      this.keypath = keypath;
+      this.attrArg = attrArg;
+      rawTagName = this.tagObject.constructor.displayName;
+      this.tagName = Batman.DOM.React.TAG_NAME_MAPPING[rawTagName] || rawTagName;
+      this.parentComponent = this.tagObject._owner;
+      if (!this.skipParseFilter) {
+        this.parseFilter();
+      }
+      this.filteredValue = this.get('filteredValue');
+    }
+
+    AbstractBinding.prototype.die = function() {
+      var _ref;
+      this.forget();
+      if ((_ref = this._batman.properties) != null) {
+        _ref.forEach(function(key, property) {
+          return property.die();
+        });
+      }
+      this.node = null;
+      this.keypath = null;
+      this.view = null;
+      this.backingView = null;
+      return this.superview = null;
+    };
+
+    AbstractBinding.prototype.parseFilter = function() {
+      var args, e, filter, filterName, filterString, filters, key, keypath, orig, split, _ref, _ref1;
+      this.filterFunctions = [];
+      this.filterArguments = [];
+      keypath = this.keypath;
+      while (get_dot_rx.test(keypath)) {
+        keypath = keypath.replace(get_dot_rx, "]['$1']");
+      }
+      filters = keypath.replace(get_rx, " | get $1 ").replace(/'/g, '"').split(/(?!")\s+\|\s+(?!")/);
+      try {
+        key = this.parseSegment(orig = filters.shift())[0];
+      } catch (_error) {
+        e = _error;
+        Batman.developer.warn(e);
+        Batman.developer.error("Error! Couldn't parse keypath in \"" + orig + "\". Parsing error above.");
+      }
+      if (key && key._keypath) {
+        this.key = key._keypath;
+      } else {
+        this.value = key;
+      }
+      if (filters.length) {
+        while (filterString = filters.shift()) {
+          split = filterString.indexOf(' ');
+          if (split === -1) {
+            split = filterString.length;
+          }
+          filterName = filterString.substr(0, split);
+          args = filterString.substr(split);
+          if (!(filter = ((_ref = this.view) != null ? (_ref1 = _ref._batman.get('filters')) != null ? _ref1[filterName] : void 0 : void 0) || Batman.Filters[filterName])) {
+            return Batman.developer.error("Unrecognized filter '" + filterName + "' in key \"" + this.keypath + "\"!");
+          }
+          this.filterFunctions.push(filter);
+          try {
+            this.filterArguments.push(this.parseSegment(args));
+          } catch (_error) {
+            e = _error;
+            Batman.developer.error("Bad filter arguments \"" + args + "\"!");
+          }
+        }
+        return true;
+      }
+    };
+
+    AbstractBinding.prototype.parseSegment = function(segment) {
+      segment = segment.replace(keypath_rx, function(match, start, bool, string, object, keypath, offset) {
+        var replacement;
+        if (start == null) {
+          start = '';
+        }
+        replacement = keypath ? '{"_keypath": "' + keypath + '"}' : bool || string || object;
+        return start + replacement;
+      });
+      return JSON.parse("[" + segment + "]");
+    };
+
+    AbstractBinding.prototype.safelySetProps = function(props) {
+      if (this.tagObject.isMounted()) {
+        return this.tagObject.setProps(props);
+      } else {
+        return Batman.mixin(this.tagObject.props, props);
+      }
+    };
+
+    return AbstractBinding;
+
+  })(Batman.Object);
+
+  Batman.DOM.React.AddClassBinding = (function(_super) {
+    __extends(AddClassBinding, _super);
+
+    function AddClassBinding() {
+      return AddClassBinding.__super__.constructor.apply(this, arguments);
+    }
+
+    AddClassBinding.prototype.applyBinding = function() {
+      var className;
+      if (this.filteredValue) {
+        className = this.tagObject.props.className || "";
+        className += " " + this.attrArg;
+        this.safelySetProps({
+          className: className
+        });
+      } else if (this.tagObject.props['data-clone']) {
+        this.filteredValue = !this.filteredValue;
+        Batman.DOM.React.RemoveClassBinding.prototype.applyBinding.apply(this);
+      }
+      return this.tagObject;
+    };
+
+    return AddClassBinding;
+
+  })(Batman.DOM.React.AbstractBinding);
+
+  Batman.DOM.React.BindAttributeBinding = (function(_super) {
+    __extends(BindAttributeBinding, _super);
+
+    function BindAttributeBinding() {
+      return BindAttributeBinding.__super__.constructor.apply(this, arguments);
+    }
+
+    BindAttributeBinding.prototype.applyBinding = function() {
+      var newProps;
+      newProps = {};
+      newProps[this.attrArg] = this.filteredValue;
+      this.safelySetProps(newProps);
+      return this.tagObject;
+    };
+
+    return BindAttributeBinding;
+
+  })(Batman.DOM.React.AbstractBinding);
+
+  Batman.DOM.React.BindBinding = (function(_super) {
+    __extends(BindBinding, _super);
+
+    function BindBinding() {
+      return BindBinding.__super__.constructor.apply(this, arguments);
+    }
+
+    BindBinding.prototype.applyBinding = function() {
+      var contentValue, inputType, newProps, onChange;
+      switch (this.tagName) {
+        case "input":
+          onChange = this.parentComponent.updateKeypath(this.keypath);
+          inputType = this.tagObject.props.type.toLowerCase();
+          newProps = (function() {
+            switch (inputType) {
+              case "checkbox":
+                if (!!this.filteredValue) {
+                  return {
+                    checked: true
+                  };
+                } else {
+                  return {};
+                }
+                break;
+              case "radio":
+                if ((this.filteredValue != null) && this.filteredValue === this.tagObject.props.value) {
+                  return {
+                    checked: true
+                  };
+                } else {
+                  return {};
+                }
+                break;
+              default:
+                return {
+                  value: this.filteredValue
+                };
+            }
+          }).call(this);
+          newProps.onChange = onChange;
+          break;
+        case "select":
+          debugger;
+          newProps = {
+            value: this.filteredValue,
+            onChange: this.parentComponent.updateKeypath(this.keypath)
+          };
+          break;
+        default:
+          if (this.filteredValue != null) {
+            contentValue = "" + this.filteredValue;
+            newProps = {
+              children: [contentValue]
+            };
+          }
+      }
+      this.safelySetProps(newProps);
+      return this.tagObject;
+    };
+
+    return BindBinding;
+
+  })(Batman.DOM.React.AbstractBinding);
+
+  Batman.DOM.React.ContextAttributeBinding = (function(_super) {
+    __extends(ContextAttributeBinding, _super);
+
+    function ContextAttributeBinding() {
+      return ContextAttributeBinding.__super__.constructor.apply(this, arguments);
+    }
+
+    ContextAttributeBinding.prototype.applyBinding = function() {
+      var baseContext, contextComponent, displayName, extraProps, newTag, prototypeNode, render;
+      this.parentComponent.setContext(this.attrArg, this.filteredValue);
+      baseContext = this.parentComponent._observer.get('baseContext');
+      extraProps = {
+        contextTarget: new Batman.Object(baseContext)
+      };
+      displayName = Batman.helpers.camelize("" + this.parentComponent.constructor.displayName + "_context_" + this.attrArg + "_component");
+      console.log("context " + displayName, baseContext);
+      prototypeNode = this.tagObject;
+      render = function() {
+        this.BatmanConstructor = contextComponent;
+        return cloneComponent(prototypeNode);
+      };
+      contextComponent = Batman.createComponent({
+        render: render,
+        displayName: displayName
+      });
+      newTag = contextComponent(Batman.mixin({}, this.tagObject.props, extraProps), this.tagObject.props.children);
+      debugger;
+      return newTag;
+    };
+
+    return ContextAttributeBinding;
+
+  })(Batman.DOM.React.AbstractBinding);
+
+  Batman.DOM.React.EventBinding = (function(_super) {
+    __extends(EventBinding, _super);
+
+    function EventBinding() {
+      return EventBinding.__super__.constructor.apply(this, arguments);
+    }
+
+    EventBinding.prototype.applyBinding = function() {
+      var eventHandlers, handler;
+      handler = this.filteredValue;
+      eventHandlers = {};
+      eventHandlers["on" + (Batman.helpers.camelize(this.attrArg))] = handler;
+      this.safelySetProps(eventHandlers);
+      return this.tagObject;
+    };
+
+    return EventBinding;
+
+  })(Batman.DOM.React.AbstractBinding);
+
+  Batman.DOM.React.ForEachBinding = (function(_super) {
+    __extends(ForEachBinding, _super);
+
+    function ForEachBinding() {
+      return ForEachBinding.__super__.constructor.apply(this, arguments);
+    }
+
+    ForEachBinding.prototype.applyBinding = function() {
+      var attrArg, list, prototypeNode;
+      prototypeNode = this.tagObject;
+      attrArg = this.attrArg;
+      delete prototypeNode.props["data-foreach-" + attrArg];
+      list = this.parentComponent.enumerate(this.keypath, attrArg, function(item) {
+        var cpt, extraProps;
+        extraProps = {};
+        extraProps[attrArg] = item;
+        cpt = cloneComponent(prototypeNode, extraProps);
+        return cpt;
+      });
+      return list;
+    };
+
+    return ForEachBinding;
+
+  })(Batman.DOM.React.AbstractBinding);
+
+  Batman.DOM.React.HideIfBinding = (function(_super) {
+    __extends(HideIfBinding, _super);
+
+    function HideIfBinding() {
+      return HideIfBinding.__super__.constructor.apply(this, arguments);
+    }
+
+    HideIfBinding.prototype.applyBinding = function() {
+      var contentValue;
+      contentValue = this.filteredValue;
+      Batman.DOM.React.ShowIfBinding.prototype._showIf.call(this, !contentValue);
+      return this.tagObject;
+    };
+
+    return HideIfBinding;
+
+  })(Batman.DOM.React.AbstractBinding);
+
+  Batman.DOM.React.NotImplementedBinding = (function(_super) {
+    __extends(NotImplementedBinding, _super);
+
+    function NotImplementedBinding() {
+      return NotImplementedBinding.__super__.constructor.apply(this, arguments);
+    }
+
+    NotImplementedBinding.prototype.applyBinding = function() {
+      var attrArg;
+      attrArg = this.attrArg ? "-" + this.attrArg : "";
+      console.warn("This binding is not supported: <" + this.tagName + " data-" + this.bindingName + attrArg + "=" + this.keypath + " />");
+      return this.tagObject;
+    };
+
+    return NotImplementedBinding;
+
+  })(Batman.DOM.React.AbstractBinding);
+
+  Batman.DOM.React.RemoveClassBinding = (function(_super) {
+    __extends(RemoveClassBinding, _super);
+
+    function RemoveClassBinding() {
+      return RemoveClassBinding.__super__.constructor.apply(this, arguments);
+    }
+
+    RemoveClassBinding.prototype.applyBinding = function() {
+      var className;
+      if (this.filteredValue) {
+        className = this.tagObject.props.className || "";
+        className = className.replace("" + this.attrArg, "");
+        this.safelySetProps({
+          className: className
+        });
+      } else if (this.tagObject.props['data-clone']) {
+        this.filteredValue = !this.filteredValue;
+        Batman.DOM.React.AddClassBinding.prototype.applyBinding.apply(this);
+      }
+      return this.tagObject;
+    };
+
+    return RemoveClassBinding;
+
+  })(Batman.DOM.React.AbstractBinding);
+
+  Batman.DOM.React.RouteBinding = (function(_super) {
+    __extends(RouteBinding, _super);
+
+    function RouteBinding() {
+      return RouteBinding.__super__.constructor.apply(this, arguments);
+    }
+
+    RouteBinding.prototype.applyBinding = function() {
+      var href, onClick, path;
+      path = this.filteredValue instanceof Batman.NamedRouteQuery ? this.filteredValue.get('path') : this.filteredValue;
+      onClick = function(e) {
+        e.stopPropagation();
+        return Batman.redirect(path);
+      };
+      href = Batman.navigator.linkTo(path);
+      this.safelySetProps({
+        onClick: onClick,
+        href: href
+      });
+      return this.tagObject;
+    };
+
+    return RouteBinding;
+
+  })(Batman.DOM.React.AbstractBinding);
+
+  Batman.DOM.React.ShowIfBinding = (function(_super) {
+    __extends(ShowIfBinding, _super);
+
+    function ShowIfBinding() {
+      return ShowIfBinding.__super__.constructor.apply(this, arguments);
+    }
+
+    ShowIfBinding.prototype.applyBinding = function() {
+      var contentValue;
+      contentValue = this.filteredValue;
+      this._showIf(!!contentValue);
+      return this.tagObject;
+    };
+
+    ShowIfBinding.prototype._showIf = function(trueOrFalse) {
+      var style;
+      style = Batman.mixin({}, this.tagObject.props.style || {});
+      if (!trueOrFalse) {
+        style.display = 'none !important';
+      } else {
+        delete style.display;
+      }
+      return this.safelySetProps({
+        style: style
+      });
+    };
+
+    return ShowIfBinding;
+
+  })(Batman.DOM.React.AbstractBinding);
+
+  Batman.HTMLStore.prototype.onResolved = function(path, callback) {
+    if (this.get(path) === void 0) {
+      return this.observeOnce(path, callback);
+    } else {
+      return callback();
+    }
+  };
+
+  this.BatmanReactDebug = true;
 
   this.reactDebug = function() {
     if (BatmanReactDebug) {
@@ -64,8 +515,38 @@
     }
   };
 
+  reactComponentForRoutingKeyAndAction = function(routingKey, action, callback) {
+    var HTMLPath, componentClass, componentName;
+    componentName = Batman.helpers.camelize("" + routingKey + "_" + action + "_component");
+    componentClass = Batman.currentApp[componentName];
+    if (!componentClass) {
+      HTMLPath = "" + routingKey + "/" + action;
+      return Batman.View.store.onResolved(HTMLPath, (function(_this) {
+        return function() {
+          var displayName, html, reactCode, render, wrappedHTML;
+          html = Batman.View.store.get(HTMLPath);
+          wrappedHTML = "/** @jsx Batman.DOM */\n<div>" + html + "</div>";
+          reactCode = JSXTransformer.transform(wrappedHTML).code;
+          displayName = componentName;
+          render = function() {
+            return eval(reactCode);
+          };
+          componentClass = Batman.createComponent({
+            displayName: displayName,
+            render: render
+          });
+          Batman.currentApp[componentName] = componentClass;
+          console.log("Defined React Component: " + componentName);
+          return callback(componentClass);
+        };
+      })(this));
+    } else {
+      return callback(componentClass);
+    }
+  };
+
   Batman.Controller.prototype.renderReact = function(options) {
-    var action, component, componentClass, componentName, existingComponent, frame, targetYield, view, yieldName, yieldNode, _ref;
+    var frame, _ref;
     if (options == null) {
       options = {};
     }
@@ -76,16 +557,24 @@
       frame.finishOperation();
       return;
     }
+    options.frame = frame;
+    options.action = (frame != null ? frame.action : void 0) || this.get('action');
+    options.componentName = Batman.helpers.camelize("" + (this.get('routingKey')) + "_" + options.action + "_component");
+    options.componentClass = Batman.currentApp[options.componentName];
+    return reactComponentForRoutingKeyAndAction(this.get('routingKey'), options.action, (function(_this) {
+      return function(componentClass) {
+        options.componentClass = componentClass;
+        return _this.finishRenderReact(options);
+      };
+    })(this));
+  };
+
+  Batman.Controller.prototype.finishRenderReact = function(options) {
+    var component, existingComponent, targetYield, view, yieldName, yieldNode, _ref;
     yieldName = options.into || "main";
     targetYield = Batman.DOM.Yield.withName(yieldName);
     yieldNode = targetYield.containerNode;
-    action = (frame != null ? frame.action : void 0) || this.get('action');
-    componentName = Batman.helpers.camelize("" + (this.get('routingKey')) + "_" + action + "_component");
-    componentClass = Batman.currentApp[componentName];
-    if (!componentClass) {
-      throw "No component for " + componentName + "!";
-    }
-    component = componentClass({
+    component = options.componentClass({
       controller: this
     });
     if (existingComponent = targetYield.get('component')) {
@@ -103,8 +592,14 @@
       }
     });
     React.renderComponent(component, yieldNode);
-    reactDebug("rendered", componentName);
-    return frame != null ? frame.finishOperation() : void 0;
+    reactDebug("rendered " + this.routingKey + "/" + options.action, options.componentName);
+    return (_ref = options.frame) != null ? _ref.finishOperation() : void 0;
+  };
+
+  Batman.createComponent = function(options) {
+    options.mixins = options.mixins || [];
+    options.mixins.push(Batman.ReactMixin);
+    return React.createClass(options);
   };
 
   Batman.ContextObserver = (function(_super) {
@@ -153,7 +648,6 @@
       prop = base.property(keypath);
       this.set(keypath, prop);
       prop.observe(this.forceUpdate);
-      reactDebug("Observing " + prop.key + " on", prop.base);
       return prop.observe(function() {
         return reactDebug("forceUpdate because of " + prop.key);
       });
@@ -181,7 +675,12 @@
     ContextObserver.prototype.setContext = function(keypath, value) {
       var base, _ref;
       base = this._baseForKeypath(keypath);
-      return (_ref = Batman.Property.forBaseAndKey(base, keypath)) != null ? _ref.setValue(value) : void 0;
+      if (base != null) {
+        return (_ref = Batman.Property.forBaseAndKey(base, keypath)) != null ? _ref.setValue(value) : void 0;
+      } else if (value != null) {
+        this.target.set(keypath, value);
+        return this._observeKeypath(keypath);
+      }
     };
 
     ContextObserver.accessor('context', function() {
@@ -195,10 +694,24 @@
       return ctx;
     });
 
+    ContextObserver.accessor('baseContext', function() {
+      var ctx;
+      ctx = {};
+      this.forEach((function(_this) {
+        return function(key, value) {
+          var baseKey;
+          baseKey = key.split(".")[0];
+          if (!ctx[baseKey]) {
+            return ctx[baseKey] = _this.getContext(baseKey);
+          }
+        };
+      })(this));
+      return ctx;
+    });
+
     ContextObserver.prototype.die = function() {
       this.forEach((function(_this) {
         return function(keypathName, property) {
-          reactDebug("ContextObserver forgetting " + keypathName);
           if (property != null) {
             property.forget(_this.forceUpdate);
           }
@@ -213,43 +726,124 @@
 
   })(Batman.Hash);
 
-  Batman.createComponent = function(options) {
-    options.mixins = options.mixins || [];
-    options.mixins.push(Batman.ReactMixin);
-    return React.createClass(options);
+  safelySetProps = function(tagObject, props) {
+    if (tagObject.isMounted()) {
+      return tagObject.setProps(props);
+    } else {
+      return Batman.mixin(tagObject.props, props);
+    }
+  };
+
+  (_base1 = Batman.DOM).React || (_base1.React = {});
+
+  Batman.DOM.React.TAG_NAME_MAPPING = {
+    ReactDOMButton: "button",
+    ReactDOMInput: "input",
+    ReactDOMOption: "option",
+    ReactDOMForm: "form"
+  };
+
+  cloneComponent = function(component, extraProps) {
+    var children, componentType, constructor, cpt, newProps, originalTagName, tagName, _i, _len, _results;
+    if (extraProps == null) {
+      extraProps = {};
+    }
+    if (component == null) {
+      return;
+    }
+    componentType = Batman.typeOf(component);
+    switch (false) {
+      case componentType !== "String":
+        return component;
+      case componentType !== "Array":
+        _results = [];
+        for (_i = 0, _len = component.length; _i < _len; _i++) {
+          cpt = component[_i];
+          _results.push(cloneComponent(cpt));
+        }
+        return _results;
+      case !(tagName = component.constructor.displayName):
+        originalTagName = tagName;
+        tagName = Batman.DOM.React.TAG_NAME_MAPPING[tagName] || tagName;
+        newProps = Batman.mixin({
+          "data-clone": true
+        }, component.props, extraProps);
+        children = cloneComponent(component.props.children);
+        constructor = component.BatmanConstructor || Batman.DOM[tagName];
+        cpt = constructor(newProps, children);
+        if (tagName === "p") {
+          console.log("p is owned by " + cpt._owner.constructor.displayName);
+        }
+        return cpt;
+      default:
+        debugger;
+        return console.warn("cloneComponent failed: No tagName for ", component);
+    }
   };
 
   Batman.DOM.reactReaders = {
-    bind: function(tagName, tagObject, value) {
-      var contentValue;
-      switch (tagName) {
-        case "span":
-          contentValue = tagObject._owner.sourceKeypath(value);
-          if (tagObject.isMounted()) {
-            return tagObject.setProps({
-              children: contentValue
-            });
-          } else {
-            return tagObject.props.children = [contentValue];
-          }
-      }
-    }
+    bind: Batman.DOM.React.BindBinding,
+    route: Batman.DOM.React.RouteBinding,
+    showif: Batman.DOM.React.ShowIfBinding,
+    hideif: Batman.DOM.React.HideIfBinding,
+    target: Batman.DOM.React.BindBinding,
+    source: Batman.DOM.React.BindBinding,
+    defineview: Batman.DOM.React.NotImplementedBinding,
+    insertif: Batman.DOM.React.NotImplementedBinding,
+    removeif: Batman.DOM.React.NotImplementedBinding,
+    deferif: Batman.DOM.React.NotImplementedBinding,
+    renderif: Batman.DOM.React.NotImplementedBinding
+  };
+
+  Batman.DOM.reactAttrReaders = {
+    foreach: Batman.DOM.React.ForEachBinding,
+    event: Batman.DOM.React.EventBinding,
+    bind: Batman.DOM.React.BindAttributeBinding,
+    addclass: Batman.DOM.React.AddClassBinding,
+    removeclass: Batman.DOM.React.RemoveClassBinding,
+    context: Batman.DOM.React.ContextAttributeBinding,
+    source: Batman.DOM.React.BindAttributeBinding
   };
 
   _ref = React.DOM;
   _fn = function(tagName, tagFunc) {
     return Batman.DOM[tagName] = function() {
-      var attrArg, bindingFunc, bindingName, children, key, prefix, props, tagObject, value, _ref1;
+      var attrArg, bindingClass, bindingName, children, classes, key, keyParts, props, tagObject, value;
       props = arguments[0], children = 2 <= arguments.length ? __slice.call(arguments, 1) : [];
+      if (classes = props != null ? props["class"] : void 0) {
+        props.className = classes;
+        delete props["class"];
+      }
       tagObject = tagFunc.call.apply(tagFunc, [React.DOM, props].concat(__slice.call(children)));
+      tagObject.BatmanConstructor = Batman.DOM[tagName];
       for (key in props) {
         value = props[key];
         if (!(key.substr(0, 5) === "data-")) {
           continue;
         }
-        _ref1 = key.split("-"), prefix = _ref1[0], bindingName = _ref1[1], attrArg = _ref1[2];
-        bindingFunc = Batman.DOM.reactReaders[bindingName];
-        bindingFunc(tagName, tagObject, value, attrArg);
+        keyParts = key.split("-");
+        bindingName = keyParts[1];
+        if (bindingName === "clone") {
+          continue;
+        }
+        if (keyParts.length > 2) {
+          attrArg = keyParts.slice(2).join("-");
+        } else {
+          attrArg = void 0;
+        }
+        if (attrArg != null) {
+          bindingClass = Batman.DOM.reactAttrReaders[bindingName];
+        } else {
+          bindingClass = Batman.DOM.reactReaders[bindingName];
+        }
+        if (!bindingClass) {
+          console.warn("No binding found for " + key + "=" + value + " on " + tagName);
+        } else {
+          tagObject = new bindingClass(tagObject, bindingName, value, attrArg).applyBinding();
+        }
+        if (bindingName === "foreach") {
+          break;
+        }
       }
       return tagObject;
     };
@@ -270,19 +864,7 @@
     componentWillUnmount: function() {
       return this._observer.die();
     },
-    _contextualize: function(keypath) {
-      var contextualizedFirstPart, firstPart, parts;
-      if (this.dataContext == null) {
-        return keypath;
-      }
-      parts = keypath.split(/\./);
-      firstPart = parts.shift();
-      contextualizedFirstPart = this.dataContext[firstPart] || firstPart;
-      parts.unshift(contextualizedFirstPart);
-      return parts.join(".");
-    },
     updateKeypath: function(keypath) {
-      keypath = this._contextualize(keypath);
       return (function(_this) {
         return function(e) {
           var value;
@@ -300,13 +882,21 @@
       })(this);
     },
     sourceKeypath: function(keypath) {
-      return this._observer.getContext(this._contextualize(keypath));
+      var val;
+      if (!keypath) {
+        debugger;
+      }
+      val = this._observer.getContext(keypath);
+      return val;
+    },
+    setContext: function(key, value) {
+      return this._observer.setContext(key, value);
     },
     _observeContext: function(props) {
       var target;
       props || (props = this.props);
-      target = props.target || props.controller;
-      reactDebug("Observing context with target", target);
+      target = props.contextTarget || props.controller;
+      reactDebug("observing contextTarget", target);
       if (this._observer) {
         this._observer.die();
       }
@@ -315,57 +905,37 @@
         component: this
       });
     },
-    executeAction: function(actionName, params) {
-      return (function(_this) {
-        return function(e) {
-          var actionParams;
-          e.preventDefault();
-          actionParams = params || e;
-          return _this.props.controller.executeAction(actionName, actionParams);
-        };
-      })(this);
-    },
-    handleWith: function() {
-      var handler, handlerName, withArguments;
-      handlerName = arguments[0], withArguments = 2 <= arguments.length ? __slice.call(arguments, 1) : [];
-      handler = this.sourceKeypath(handlerName);
-      return (function(_this) {
-        return function(e) {
-          var callArgs;
-          e.preventDefault();
-          callArgs = withArguments || [e];
-          return handler.apply(null, callArgs);
-        };
-      })(this);
-    },
     enumerate: function(setName, itemName, generator) {
-      var components, controller, displayName, iterationComponent, outerContext, render, set, _getKey;
+      var baseContext, components, controller, displayName, iterationComponent, render, set, _getKey;
       _getKey = this._getEnumerateKey;
       set = this.sourceKeypath(setName);
       this.sourceKeypath("" + setName + ".toArray");
       displayName = Batman.helpers.camelize("enumerate_" + itemName + "_in_" + setName.split(".")[0]);
       render = function() {
-        return generator.call(this, this.props.item);
+        return generator.call(this);
       };
       iterationComponent = Batman.createComponent({
         render: render,
         displayName: displayName
       });
-      outerContext = this._observer.get("context");
+      baseContext = this._observer.get('baseContext');
+      delete baseContext[itemName];
       controller = this.props.controller;
       components = set.map(function(item) {
-        var innerContext, innerProps, key, target;
-        innerContext = Batman.extend({}, outerContext);
+        var contextTarget, cpt, innerContext, innerProps, key;
+        innerContext = Batman.extend({}, baseContext);
         innerContext[itemName] = item;
-        target = new Batman.Object(innerContext);
+        contextTarget = new Batman.Object(innerContext);
         key = _getKey(item);
         innerProps = {
           controller: controller,
-          target: target,
+          contextTarget: contextTarget,
           item: item,
           key: key
         };
-        return iterationComponent(innerProps);
+        cpt = iterationComponent(innerProps);
+        cpt._owner = cpt;
+        return cpt;
       });
       return components;
     },
@@ -375,80 +945,61 @@
       } else {
         return JSON.stringify(item);
       }
-    },
-    linkTo: function(routeQuery) {
-      var actionPart, base, obj, objPart, part, parts, path, _i, _len, _ref1;
-      if (routeQuery.substr(0, 6) !== 'routes') {
-        path = routeQuery;
-      } else {
-        parts = routeQuery.split(/\[/);
-        base = Batman.currentApp;
-        for (_i = 0, _len = parts.length; _i < _len; _i++) {
-          part = parts[_i];
-          if (part.indexOf(']') > -1) {
-            _ref1 = part.split(/\]\./), objPart = _ref1[0], actionPart = _ref1[1];
-            obj = this.sourceKeypath(objPart);
-            base = base.get(obj);
-            base = base.get(actionPart);
-          } else {
-            base = base.get(part);
-          }
-        }
-        path = base.get('path');
-      }
-      return Batman.navigator.linkTo(path);
-    },
-    redirect: function(routeQuery) {
-      var path;
-      path = this.linkTo(routeQuery);
-      return function(e) {
-        e.stopPropagation();
-        return Batman.redirect(path);
-      };
-    },
-    addClass: function(className, keypath, renderFunc) {
-      var node, val;
-      val = this.sourceKeypath(keypath);
-      node = renderFunc();
-      if (val) {
-        node.className += " " + className;
-      }
-      return node;
-    },
-    _showIf: function(val, callback) {
-      if (val) {
-        return callback.call(this);
-      } else {
-        return void 0;
-      }
-    },
-    showIf: function() {
-      var callback, keypath, keypaths, val, _i, _j, _len;
-      keypaths = 2 <= arguments.length ? __slice.call(arguments, 0, _i = arguments.length - 1) : (_i = 0, []), callback = arguments[_i++];
-      val = true;
-      for (_j = 0, _len = keypaths.length; _j < _len; _j++) {
-        keypath = keypaths[_j];
-        val = val && this.sourceKeypath(keypath);
-        if (!val) {
-          return this._showIf(!!val, callback);
-        }
-      }
-      return this._showIf(!!val, callback);
-    },
-    hideIf: function() {
-      var callback, keypath, keypaths, val, _i, _j, _len;
-      keypaths = 2 <= arguments.length ? __slice.call(arguments, 0, _i = arguments.length - 1) : (_i = 0, []), callback = arguments[_i++];
-      val = true;
-      for (_j = 0, _len = keypaths.length; _j < _len; _j++) {
-        keypath = keypaths[_j];
-        val = val && this.sourceKeypath(keypath);
-        if (!val) {
-          return this._showIf(!val, callback);
-        }
-      }
-      return this._showIf(!val, callback);
     }
   };
+
+  Batman.config.pathToApp = window.location.pathname;
+
+  Batman.config.usePushState = false;
+
+  this.App = (function(_super) {
+    __extends(App, _super);
+
+    function App() {
+      return App.__super__.constructor.apply(this, arguments);
+    }
+
+    App.root('animals#index');
+
+    App.resources('animals');
+
+    App.syncsWithFirebase('batman-react');
+
+    App.on('run', function() {
+      App.Animal.load();
+      setTimeout((function(_this) {
+        return function() {
+          return _this._seedData();
+        };
+      })(this), 5000);
+      return Batman.redirect("/");
+    });
+
+    App._seedData = function() {
+      var animal, n, totalAnimals, _i, _len, _ref1, _results;
+      totalAnimals = App.Animal.get('all.length');
+      if (totalAnimals === 0) {
+        console.log("No data found, running seeds!");
+        _ref1 = ["Spider", "Starfish", "Echidna"];
+        _results = [];
+        for (_i = 0, _len = _ref1.length; _i < _len; _i++) {
+          n = _ref1[_i];
+          animal = new App.Animal({
+            name: n
+          });
+          _results.push(animal.save());
+        }
+        return _results;
+      }
+    };
+
+    return App;
+
+  })(Batman.App);
+
+  $(function() {
+    return App.run();
+  });
 
   App.ApplicationController = (function(_super) {
     __extends(ApplicationController, _super);
@@ -521,11 +1072,10 @@
           if (err) {
             throw err;
           }
-          _this.set('animal', record);
-          return _this.renderReact();
+          return _this.set('animal', record);
         };
       })(this));
-      return this.render(false);
+      return this.renderReact();
     };
 
     AnimalsController.prototype.save = function(animal) {
@@ -576,6 +1126,10 @@
       inclusion: {
         "in": Animal.NAMES
       }
+    });
+
+    Animal.accessor('toString', function() {
+      return "" + (this.get('name')) + " " + (this.get('animalClass'));
     });
 
     return Animal;

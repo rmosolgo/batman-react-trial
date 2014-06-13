@@ -1,0 +1,47 @@
+<h1>
+  All Animals
+  <small> (<span data-bind='"Animal" | pluralize animals.length'></span>)</small>
+</h1>
+<ul class="list-unstyled">
+  <li data-foreach-animal='animals'>
+    <div class="row">
+      <div class="col-xs-4" data-context-canfly='animal.canFly'>
+        <a data-route="routes.animals[animal]">
+          <p class="lead text-warning" data-removeclass-text-warning='canfly' data-addclass-text-success='canfly' >
+            <span data-bind='animal.name'></span>
+            <span class="text-muted" data-showif='animal.canFly'> (can fly)</span>
+            <span class="text-muted" data-hideif='animal.canFly'> (can't fly)</span>
+          </p>
+        </a>
+      </div>
+      <div class="col-xs-4">
+        <small data-showif='animal.color' data-bind="animal.color | upcase | append ' '"></small>
+        <small data-bind="animal.animalClass | upcase"></small>
+      </div>
+      <div class="col-xs-2">
+        <button data-event-click='executeAction | withArguments "edit", animal' class="btn">Edit in Dialog</button>
+      </div>
+      <div class="col-xs-2">
+        <button data-event-click='destroy | withArguments animal' class="btn btn-danger">Destroy</button>
+      </div>
+    </div>
+  </li>
+</ul>
+<p class="row">
+  <div class="well">
+    <form data-formfor-animal='newAnimal' data-event-submit="save | withArguments newAnimal">
+      <ul class='list-unstyled'>
+        <li class='alert alert-danger' data-foreach-error='newAnimal.errors' data-bind='error.fullMessage'></li>
+      </ul>
+      <div class="form-group">
+        <label>New Animal:</label>
+        <input type="text" class="form-control" data-bind='newAnimal.name'/>
+      </div>
+      <p>
+        Make a new animal:
+        <span data-bind="Animal.NAMES | join ', ' | prepend ' ' "></span>
+      </p>
+      <input type="submit" value="Save" class="btn btn-primary"/>
+    </form>
+  </div>
+</p>
