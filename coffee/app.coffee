@@ -12,7 +12,7 @@ class @App extends Batman.App
     setTimeout =>
         @_seedData()
       , 5000
-    Batman.redirect("/")
+    # Batman.redirect("/")
 
   # Just to make things interesting, make some Animals
   @_seedData: ->

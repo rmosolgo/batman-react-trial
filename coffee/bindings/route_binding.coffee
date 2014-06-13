@@ -9,4 +9,4 @@ class Batman.DOM.React.RouteBinding extends Batman.DOM.React.AbstractBinding
       Batman.redirect(path)
     href = Batman.navigator.linkTo(path)
     @safelySetProps({onClick, href})
-    @tagObject
+    @descriptor

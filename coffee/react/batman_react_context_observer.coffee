@@ -1,11 +1,15 @@
 class Batman.ContextObserver extends Batman.Hash
   constructor: ({@component, @target}) ->
       super({})
+      @_alreadyObserving = {}
       @forceUpdate = @_forceUpdate.bind(@)
       @on "changed", @forceUpdate
 
   _targets: ->
-    [@target, Batman.currentApp]
+    @_targetArray ||= if @component?.props?.controller
+        [@target, @component.props.controller, Batman.currentApp]
+      else
+        [@target, Batman.currentApp]
 
   _forceUpdate: ->
     if @component.isMounted()
@@ -23,13 +27,14 @@ class Batman.ContextObserver extends Batman.Hash
     undefined
 
   _observeKeypath: (keypath) ->
+    return if @_alreadyObserving[keypath]
+    @_alreadyObserving[keypath] = true
     base = @_baseForKeypath(keypath)
     prop = base.property(keypath)
     @set(keypath, prop)
     prop.observe(@forceUpdate)
     # reactDebug("Observing #{prop.key} on", prop.base)
-    prop.observe ->
-      reactDebug "forceUpdate because of #{prop.key}"
+    prop.observe (nv, ov) -> reactDebug "forceUpdate because of #{prop.key} #{Batman.Filters.truncate(JSON.stringify(ov), 15)} -> #{Batman.Filters.truncate(JSON.stringify(nv), 15)}"
 
   getContext: (keypath) ->
     base = @_baseForKeypath(keypath)
@@ -50,7 +55,7 @@ class Batman.ContextObserver extends Batman.Hash
     base = @_baseForKeypath(keypath)
     if base?
       Batman.Property.forBaseAndKey(base, keypath)?.setValue(value)
-    else if value?
+    else if typeof value isnt "undefined"
       @target.set(keypath, value)
       @_observeKeypath(keypath)
 
@@ -73,6 +78,6 @@ class Batman.ContextObserver extends Batman.Hash
     @forEach (keypathName, property) =>
       # reactDebug "ContextObserver forgetting #{keypathName}"
       property?.forget(@forceUpdate)
+      @forget(keypathName)
       @unset(keypathName)
     @off()
-    @forget()

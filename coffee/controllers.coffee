@@ -19,9 +19,11 @@ class App.AnimalsController extends App.ApplicationController
   routingKey: 'animals'
 
   index: (params) ->
-    @set 'newAnimal', new App.Animal
-    @set 'animals', App.Animal.get('all.sortedBy.name')
-    @renderReact()
+    App.Animal.load =>
+      @set 'newAnimal', new App.Animal
+      @set 'animals', App.Animal.get('all.sortedBy.name')
+      @renderReact()
+    @render(false)
 
   edit: (animal) ->
     @set 'currentAnimal', animal.transaction()
@@ -32,7 +34,8 @@ class App.AnimalsController extends App.ApplicationController
     App.Animal.find params.id, (err, record) =>
       throw err if err
       @set 'animal', record
-    @renderReact()
+      @renderReact()
+    @render(false)
 
   save: (animal) ->
     wasNew = animal.get('isNew')

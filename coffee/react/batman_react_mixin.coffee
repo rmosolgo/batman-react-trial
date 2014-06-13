@@ -9,59 +9,56 @@ Batman.ReactMixin =
   componentWillUnmount: ->
     @_observer.die()
 
-  updateKeypath: (keypath) ->
-    (e) =>
-      value = switch e.target.type.toUpperCase()
-        when "CHECKBOX" then e.target.checked
-        else e.target.value
-      reactDebug "updating " + keypath + " to: ", value
-      @_observer.setContext keypath, value
-
-  sourceKeypath: (keypath) ->
-    if !keypath # or keypath is 'animalclass'
-      debugger
-    val = @_observer.getContext(keypath)
-    val
-
-
-  setContext: (key, value) ->
-    @_observer.setContext(key, value)
-
   _observeContext: (props) ->
     props ||= @props
-    target = props.contextTarget || props.controller
+    target = props.contextTarget || new Batman.Object
     reactDebug "observing contextTarget", target
     @_observer.die() if @_observer
     @_observer = new Batman.ContextObserver(target: target, component: this)
 
-  enumerate: (setName, itemName, generator) ->
-    _getKey = @_getEnumerateKey
-    set = @sourceKeypath(setName)
-    @sourceKeypath("#{setName}.toArray")
-    displayName = Batman.helpers.camelize("enumerate_" + itemName + "_in_" + setName.split(".")[0])
-    render = ->
-      generator.call(this)
-    iterationComponent = Batman.createComponent({render, displayName})
-
-    # only pass base objects to the child so that nested keypaths will be looked up against it
-    baseContext = @_observer.get('baseContext')
-    delete baseContext[itemName]
-
-    # reactDebug "baseContext", baseContext
-    controller = @props.controller
-    components = set.map (item) ->
-      innerContext = Batman.extend({}, baseContext)
-      innerContext[itemName] = item
-      contextTarget = new Batman.Object(innerContext)
-      key = _getKey(item)
-      innerProps = {controller, contextTarget, item, key}
-      cpt = iterationComponent(innerProps)
-      cpt._owner = cpt
-      cpt
+  renderTree: ->
+    tree = @renderBatman()
+    tree.contextObserver = @_observer
+    components = bindBatmanDescriptor(tree)
     components
 
-  _getEnumerateKey: (item) ->
-    if item.hashKey?
-      item.hashKey()
+bindBatmanDescriptor = (descriptor = {}) ->
+  descriptorType = Batman.typeOf(descriptor)
+  return descriptor if descriptorType is "String"
+
+  for key, value of descriptor.props when key.substr(0,5) is "data-"
+    keyParts = key.split("-")
+    bindingName = keyParts[1]
+
+    if keyParts.length > 2
+      attrArg = keyParts.slice(2).join("-") # allows data-addclass-alert--error
+    else # have to unset since this isn't in a closure
+      attrArg = undefined
+
+    if attrArg?
+      bindingClass = Batman.DOM.reactAttrReaders[bindingName]
     else
-      JSON.stringify(item)
+      bindingClass = Batman.DOM.reactReaders[bindingName]
+
+    if !bindingClass
+      console.warn("No binding found for #{key}=#{value} on #{descriptor.type}")
+    else
+      descriptor = new bindingClass(descriptor, bindingName, value, attrArg).applyBinding()
+      # foreach binding returns an array of children!
+      if bindingName is "foreach"
+        break
+
+  if descriptor?.type
+    {type, props, children} = descriptor
+    newChildren = for child in children
+      child.contextObserver ?= descriptor.contextObserver
+      bindBatmanDescriptor(child)
+    React.DOM[type](props, newChildren...)
+  else
+    descriptor
+
+Batman.createComponent = (options) ->
+  options.mixins = options.mixins or []
+  options.mixins.push Batman.ReactMixin
+  options.render = Batman.ReactMixin.renderTree
+  React.createClass options

@@ -5,4 +5,4 @@ class Batman.DOM.React.NotImplementedBinding extends Batman.DOM.React.AbstractBi
       else
         ""
     console.warn("This binding is not supported: <#{@tagName} data-#{@bindingName}#{attrArg}=#{@keypath} />")
-    @tagObject
+    @descriptor

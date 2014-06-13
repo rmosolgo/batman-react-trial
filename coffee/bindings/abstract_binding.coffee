@@ -1,11 +1,7 @@
-# Bindings are shortlived objects which manage the observation of any keypaths a `data` attribute depends on.
-# Bindings parse any keypaths which are filtered and use an accessor to apply the filters, and thus enjoy
-# the automatic trigger and dependency system that Batman.Objects use. Every, and I really mean every method
-# which uses filters has to be defined in terms of a new binding. This is so that the proper order of
-# objects is traversed and any observers are properly attached.
+# Mostly copy-pasted from Batman.DOM.AbstractBinding
 Batman.DOM.React ||= {}
 
-class Batman.DOM.React.AbstractBinding extends Batman.Object
+class Batman.DOM.React.AbstractBinding
   # A beastly regular expression for pulling keypaths out of the JSON arguments to a filter.
   # Match either strings, object literals, or keypaths.
   keypath_rx = ///
@@ -33,41 +29,30 @@ class Batman.DOM.React.AbstractBinding extends Batman.Object
   get_rx = /(?!^\s*)\[(.*?)\]/g
 
   # The `filteredValue` which calculates the final result by reducing the initial value through all the filters.
-  @accessor 'filteredValue',
-    get: ->
-      unfilteredValue = @get('unfilteredValue')
-      self = this
-      if @filterFunctions.length > 0
-        result = @filterFunctions.reduce((value, fn, i) ->
-          # Get any argument keypaths from the context stored at parse time.
-          args = self.filterArguments[i].map (argument) ->
-            if argument._keypath
-              self.lookupKeypath(argument._keypath)
-            else
-              argument
+  getFilteredValue: ->
+    unfilteredValue = @getUnfilteredValue()
+    self = this
+    if @filterFunctions.length > 0
+      result = @filterFunctions.reduce((value, fn, i) ->
+        # Get any argument keypaths from the context stored at parse time.
+        args = self.filterArguments[i].map (argument) ->
+          if argument._keypath
+            self.lookupKeypath(argument._keypath)
+          else
+            argument
 
-          # Apply the filter.
-          args.unshift value
-          args.push undefined while args.length < (fn.length - 1)
-          args.push self
-          fn.apply(self.view, args)
-        , unfilteredValue)
+        # Apply the filter.
+        args.unshift value
+        args.push undefined while args.length < (fn.length - 1)
+        args.push self
+        fn.apply(self.view, args)
+      , unfilteredValue)
 
-        result
-      else
-        unfilteredValue
-
-    # We ignore any filters for setting, because they often aren't reversible.
-    set: (_, newValue) -> @set('unfilteredValue', newValue)
-
+      result
+    else
+      unfilteredValue
   # The `unfilteredValue` is whats evaluated each time any dependents change.
-  @accessor 'unfilteredValue',
-    get: -> @_unfilteredValue(@get('key'))
-    set: (_, value) ->
-      if k = @get('key')
-        @view.setKeypath(k, value)
-      else
-        @set('value', value)
+  getUnfilteredValue: -> @_unfilteredValue(@key)
 
   _unfilteredValue: (key) ->
     # If we're working with an `@key` and not an `@value`, find the context the key belongs to so we can
@@ -75,82 +60,16 @@ class Batman.DOM.React.AbstractBinding extends Batman.Object
     if key
       @lookupKeypath(key)
     else
-      @get('value')
+      @value
 
   lookupKeypath: (keypath) ->
-    @parentComponent.sourceKeypath(keypath)
+    @descriptor.contextObserver.getContext(keypath)
 
-
-  onlyAll = Batman.BindingDefinitionOnlyObserve.All
-  onlyData = Batman.BindingDefinitionOnlyObserve.Data
-  onlyNode = Batman.BindingDefinitionOnlyObserve.Node
-
-  bindImmediately: true
-  shouldSet: true
-  isInputBinding: false
-  escapeValue: true
-  onlyObserve: onlyAll
-  skipParseFilter: false
-
-  constructor: (@tagObject, @bindingName, @keypath, @attrArg) ->
-    rawTagName = @tagObject.constructor.displayName
-
-    @tagName =  Batman.DOM.React.TAG_NAME_MAPPING[rawTagName] || rawTagName
-    @parentComponent = @tagObject._owner
-    # {@node, @keypath, @view} = definition
-    # @onlyObserve = definition.onlyObserve if definition.onlyObserve
-    # @skipParseFilter = definition.skipParseFilter if definition.skipParseFilter?
-
-
+  constructor: (@descriptor, @bindingName, @keypath, @attrArg) ->
+    @tagName =  @descriptor.type
     # Pull out the `@key` and filter from the `@keypath`.
-    @parseFilter() if not @skipParseFilter
-    @filteredValue = @get('filteredValue')
-    # viewClass = @backWithView if typeof @backWithView is 'function'
-    # @setupBackingView(viewClass, definition.viewOptions) if @backWithView
-
-    # Observe the node and the data.
-    # @bind() if @bindImmediately
-
-  # isTwoWay: -> @key? && @filterFunctions.length is 0
-
-  # bind: ->
-  #   # Attach the observers.
-  #   if @node and @onlyObserve in [onlyAll, onlyNode] and Batman.DOM.nodeIsEditable(@node)
-  #     Batman.DOM.events.change @node, @_fireNodeChange.bind(this)
-
-  #     # Usually, we let the HTML value get updated upon binding by `observeAndFire`ing the dataChange
-  #     # function below. When dataChange isn't attached, we update the JS land value such that the
-  #     # sync between DOM and JS is maintained.
-  #     if @onlyObserve is onlyNode
-  #       @_fireNodeChange()
-
-  #   # Observe the value of this binding's `filteredValue` and fire it immediately to update the node.
-  #   if @onlyObserve in [onlyAll, onlyData]
-  #     @observeAndFire 'filteredValue', @_fireDataChange
-
-  #   @view._addChildBinding(this)
-
-  # _fireNodeChange: (event) ->
-  #   @shouldSet = false
-  #   val = @value || @get('keyContext')
-  #   @nodeChange?(@node, val, event)
-  #   @fire 'nodeChange', @node, val
-  #   @shouldSet = true
-
-  # _fireDataChange: (value) =>
-  #   if @shouldSet
-  #     @dataChange?(value, @node)
-  #     @fire 'dataChange', value, @node
-
-  die: ->
-    @forget()
-    @_batman.properties?.forEach (key, property) -> property.die()
-
-    @node = null
-    @keypath = null
-    @view = null
-    @backingView = null
-    @superview = null
+    @parseFilter()
+    @filteredValue = @getFilteredValue()
 
   parseFilter: ->
     # Store the function which does the filtering and the arguments (all except the actual value to apply the
@@ -183,10 +102,7 @@ class Batman.DOM.React.AbstractBinding extends Batman.Object
         filterName = filterString.substr(0, split)
         args = filterString.substr(split)
 
-        # If the filter exists, grab it; otherwise, bail.
-        unless filter = (@view?._batman.get('filters')?[filterName] || Batman.Filters[filterName])
-          return Batman.developer.error "Unrecognized filter '#{filterName}' in key \"#{@keypath}\"!"
-
+        filter = Batman.Filters[filterName]
         @filterFunctions.push filter
 
         # Get the arguments for the filter by parsing the args as JSON, or
@@ -210,25 +126,5 @@ class Batman.DOM.React.AbstractBinding extends Batman.Object
       start + replacement
     JSON.parse("[#{segment}]")
 
-  # setupBackingView: (viewClass, viewOptions) ->
-  #   return @backingView if @backingView
-  #   return @backingView if @node and @backingView = Batman._data(@node, 'view')
-
-  #   @superview = @view
-
-  #   viewOptions ||= {}
-  #   viewOptions.node ?= @node
-  #   viewOptions.parentNode ?= @node
-  #   viewOptions.isBackingView = true
-
-  #   @backingView = new (viewClass || Batman.BackingView)(viewOptions)
-  #   @superview.subviews.add(@backingView)
-  #   Batman._data(@node, 'view', @backingView) if @node
-
-  #   return @backingView
-
   safelySetProps: (props) ->
-    if @tagObject.isMounted()
-      @tagObject.setProps(props)
-    else
-      Batman.mixin(@tagObject.props, props)
+    Batman.mixin(@descriptor.props, props)

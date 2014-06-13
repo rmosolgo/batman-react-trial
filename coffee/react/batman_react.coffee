@@ -1,7 +1,4 @@
 # Batman.Controller::renderReact
-# Batman.ContextObserver
-# Batman.ReactMixin
-# Batman.createComponent
 
 Batman.HTMLStore::onResolved = (path, callback) ->
   if @get(path) == undefined
@@ -25,8 +22,8 @@ reactComponentForRoutingKeyAndAction = (routingKey, action, callback) ->
       wrappedHTML = "/** @jsx Batman.DOM */\n<div>#{html}</div>"
       reactCode = JSXTransformer.transform(wrappedHTML).code
       displayName = componentName
-      render = -> eval(reactCode)
-      componentClass = Batman.createComponent({displayName, render})
+      renderBatman = -> eval(reactCode)
+      componentClass = Batman.createComponent({displayName, renderBatman})
       Batman.currentApp[componentName] = componentClass
       console.log("Defined React Component: #{componentName}")
       callback(componentClass)
@@ -78,8 +75,3 @@ Batman.Controller::finishRenderReact = (options) ->
   React.renderComponent(component, yieldNode)
   reactDebug "rendered #{@routingKey}/#{options.action}", options.componentName
   options.frame?.finishOperation()
-
-Batman.createComponent = (options) ->
-  options.mixins = options.mixins or []
-  options.mixins.push Batman.ReactMixin
-  React.createClass options

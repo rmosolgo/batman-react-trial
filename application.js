@@ -1,15 +1,13 @@
 (function() {
-  var cloneComponent, reactComponentForRoutingKeyAndAction, safelySetProps, tagFunc, tagName, _base, _base1, _fn, _ref,
+  var bindBatmanDescriptor, cloneDescriptor, reactComponentForRoutingKeyAndAction, tagFunc, tagName, _base, _fn, _ref,
     __hasProp = {}.hasOwnProperty,
     __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
     __slice = [].slice;
 
   (_base = Batman.DOM).React || (_base.React = {});
 
-  Batman.DOM.React.AbstractBinding = (function(_super) {
-    var get_dot_rx, get_rx, keypath_rx, onlyAll, onlyData, onlyNode;
-
-    __extends(AbstractBinding, _super);
+  Batman.DOM.React.AbstractBinding = (function() {
+    var get_dot_rx, get_rx, keypath_rx;
 
     keypath_rx = /(^|,)\s*(?:(true|false)|("[^"]*")|(\{[^\}]*\})|(([0-9\_\-]+[a-zA-Z\_\-]|[a-zA-Z])[\w\-\.\?\!\+]*))\s*(?=$|,)/g;
 
@@ -17,114 +15,61 @@
 
     get_rx = /(?!^\s*)\[(.*?)\]/g;
 
-    AbstractBinding.accessor('filteredValue', {
-      get: function() {
-        var result, self, unfilteredValue;
-        unfilteredValue = this.get('unfilteredValue');
-        self = this;
-        if (this.filterFunctions.length > 0) {
-          result = this.filterFunctions.reduce(function(value, fn, i) {
-            var args;
-            args = self.filterArguments[i].map(function(argument) {
-              if (argument._keypath) {
-                return self.lookupKeypath(argument._keypath);
-              } else {
-                return argument;
-              }
-            });
-            args.unshift(value);
-            while (args.length < (fn.length - 1)) {
-              args.push(void 0);
+    AbstractBinding.prototype.getFilteredValue = function() {
+      var result, self, unfilteredValue;
+      unfilteredValue = this.getUnfilteredValue();
+      self = this;
+      if (this.filterFunctions.length > 0) {
+        result = this.filterFunctions.reduce(function(value, fn, i) {
+          var args;
+          args = self.filterArguments[i].map(function(argument) {
+            if (argument._keypath) {
+              return self.lookupKeypath(argument._keypath);
+            } else {
+              return argument;
             }
-            args.push(self);
-            return fn.apply(self.view, args);
-          }, unfilteredValue);
-          return result;
-        } else {
-          return unfilteredValue;
-        }
-      },
-      set: function(_, newValue) {
-        return this.set('unfilteredValue', newValue);
+          });
+          args.unshift(value);
+          while (args.length < (fn.length - 1)) {
+            args.push(void 0);
+          }
+          args.push(self);
+          return fn.apply(self.view, args);
+        }, unfilteredValue);
+        return result;
+      } else {
+        return unfilteredValue;
       }
-    });
+    };
 
-    AbstractBinding.accessor('unfilteredValue', {
-      get: function() {
-        return this._unfilteredValue(this.get('key'));
-      },
-      set: function(_, value) {
-        var k;
-        if (k = this.get('key')) {
-          return this.view.setKeypath(k, value);
-        } else {
-          return this.set('value', value);
-        }
-      }
-    });
+    AbstractBinding.prototype.getUnfilteredValue = function() {
+      return this._unfilteredValue(this.key);
+    };
 
     AbstractBinding.prototype._unfilteredValue = function(key) {
       if (key) {
         return this.lookupKeypath(key);
       } else {
-        return this.get('value');
+        return this.value;
       }
     };
 
     AbstractBinding.prototype.lookupKeypath = function(keypath) {
-      return this.parentComponent.sourceKeypath(keypath);
+      return this.descriptor.contextObserver.getContext(keypath);
     };
 
-    onlyAll = Batman.BindingDefinitionOnlyObserve.All;
-
-    onlyData = Batman.BindingDefinitionOnlyObserve.Data;
-
-    onlyNode = Batman.BindingDefinitionOnlyObserve.Node;
-
-    AbstractBinding.prototype.bindImmediately = true;
-
-    AbstractBinding.prototype.shouldSet = true;
-
-    AbstractBinding.prototype.isInputBinding = false;
-
-    AbstractBinding.prototype.escapeValue = true;
-
-    AbstractBinding.prototype.onlyObserve = onlyAll;
-
-    AbstractBinding.prototype.skipParseFilter = false;
-
-    function AbstractBinding(tagObject, bindingName, keypath, attrArg) {
-      var rawTagName;
-      this.tagObject = tagObject;
+    function AbstractBinding(descriptor, bindingName, keypath, attrArg) {
+      this.descriptor = descriptor;
       this.bindingName = bindingName;
       this.keypath = keypath;
       this.attrArg = attrArg;
-      rawTagName = this.tagObject.constructor.displayName;
-      this.tagName = Batman.DOM.React.TAG_NAME_MAPPING[rawTagName] || rawTagName;
-      this.parentComponent = this.tagObject._owner;
-      if (!this.skipParseFilter) {
-        this.parseFilter();
-      }
-      this.filteredValue = this.get('filteredValue');
+      this.tagName = this.descriptor.type;
+      this.parseFilter();
+      this.filteredValue = this.getFilteredValue();
     }
 
-    AbstractBinding.prototype.die = function() {
-      var _ref;
-      this.forget();
-      if ((_ref = this._batman.properties) != null) {
-        _ref.forEach(function(key, property) {
-          return property.die();
-        });
-      }
-      this.node = null;
-      this.keypath = null;
-      this.view = null;
-      this.backingView = null;
-      return this.superview = null;
-    };
-
     AbstractBinding.prototype.parseFilter = function() {
-      var args, e, filter, filterName, filterString, filters, key, keypath, orig, split, _ref, _ref1;
+      var args, e, filter, filterName, filterString, filters, key, keypath, orig, split;
       this.filterFunctions = [];
       this.filterArguments = [];
       keypath = this.keypath;
@@ -152,9 +97,7 @@
           }
           filterName = filterString.substr(0, split);
           args = filterString.substr(split);
-          if (!(filter = ((_ref = this.view) != null ? (_ref1 = _ref._batman.get('filters')) != null ? _ref1[filterName] : void 0 : void 0) || Batman.Filters[filterName])) {
-            return Batman.developer.error("Unrecognized filter '" + filterName + "' in key \"" + this.keypath + "\"!");
-          }
+          filter = Batman.Filters[filterName];
           this.filterFunctions.push(filter);
           try {
             this.filterArguments.push(this.parseSegment(args));
@@ -180,16 +123,12 @@
     };
 
     AbstractBinding.prototype.safelySetProps = function(props) {
-      if (this.tagObject.isMounted()) {
-        return this.tagObject.setProps(props);
-      } else {
-        return Batman.mixin(this.tagObject.props, props);
-      }
+      return Batman.mixin(this.descriptor.props, props);
     };
 
     return AbstractBinding;
 
-  })(Batman.Object);
+  })();
 
   Batman.DOM.React.AddClassBinding = (function(_super) {
     __extends(AddClassBinding, _super);
@@ -201,16 +140,13 @@
     AddClassBinding.prototype.applyBinding = function() {
       var className;
       if (this.filteredValue) {
-        className = this.tagObject.props.className || "";
+        className = this.descriptor.props.className || "";
         className += " " + this.attrArg;
         this.safelySetProps({
           className: className
         });
-      } else if (this.tagObject.props['data-clone']) {
-        this.filteredValue = !this.filteredValue;
-        Batman.DOM.React.RemoveClassBinding.prototype.applyBinding.apply(this);
       }
-      return this.tagObject;
+      return this.descriptor;
     };
 
     return AddClassBinding;
@@ -229,7 +165,7 @@
       newProps = {};
       newProps[this.attrArg] = this.filteredValue;
       this.safelySetProps(newProps);
-      return this.tagObject;
+      return this.descriptor;
     };
 
     return BindAttributeBinding;
@@ -244,11 +180,10 @@
     }
 
     BindBinding.prototype.applyBinding = function() {
-      var contentValue, inputType, newProps, onChange;
+      var inputType, newProps;
       switch (this.tagName) {
         case "input":
-          onChange = this.parentComponent.updateKeypath(this.keypath);
-          inputType = this.tagObject.props.type.toLowerCase();
+          inputType = this.descriptor.props.type.toLowerCase();
           newProps = (function() {
             switch (inputType) {
               case "checkbox":
@@ -261,7 +196,7 @@
                 }
                 break;
               case "radio":
-                if ((this.filteredValue != null) && this.filteredValue === this.tagObject.props.value) {
+                if ((this.filteredValue != null) && this.filteredValue === this.descriptor.props.value) {
                   return {
                     checked: true
                   };
@@ -275,25 +210,45 @@
                 };
             }
           }).call(this);
-          newProps.onChange = onChange;
+          newProps.onChange = this.updateKeypath();
           break;
         case "select":
-          debugger;
           newProps = {
             value: this.filteredValue,
-            onChange: this.parentComponent.updateKeypath(this.keypath)
+            onChange: this.updateKeypath()
           };
           break;
         default:
           if (this.filteredValue != null) {
-            contentValue = "" + this.filteredValue;
-            newProps = {
-              children: [contentValue]
-            };
+            this.descriptor.children = "" + this.filteredValue;
+            newProps = {};
           }
       }
       this.safelySetProps(newProps);
-      return this.tagObject;
+      return this.descriptor;
+    };
+
+    BindBinding.prototype.updateKeypath = function(keypath) {
+      var observer;
+      if (keypath == null) {
+        keypath = this.keypath;
+      }
+      observer = this.descriptor.contextObserver;
+      return (function(_this) {
+        return function(e) {
+          var value;
+          value = (function() {
+            switch (e.target.type.toUpperCase()) {
+              case "CHECKBOX":
+                return e.target.checked;
+              default:
+                return e.target.value;
+            }
+          })();
+          reactDebug("updating " + keypath + " to: ", value);
+          return observer.setContext(keypath, value);
+        };
+      })(this);
     };
 
     return BindBinding;
@@ -308,26 +263,8 @@
     }
 
     ContextAttributeBinding.prototype.applyBinding = function() {
-      var baseContext, contextComponent, displayName, extraProps, newTag, prototypeNode, render;
-      this.parentComponent.setContext(this.attrArg, this.filteredValue);
-      baseContext = this.parentComponent._observer.get('baseContext');
-      extraProps = {
-        contextTarget: new Batman.Object(baseContext)
-      };
-      displayName = Batman.helpers.camelize("" + this.parentComponent.constructor.displayName + "_context_" + this.attrArg + "_component");
-      console.log("context " + displayName, baseContext);
-      prototypeNode = this.tagObject;
-      render = function() {
-        this.BatmanConstructor = contextComponent;
-        return cloneComponent(prototypeNode);
-      };
-      contextComponent = Batman.createComponent({
-        render: render,
-        displayName: displayName
-      });
-      newTag = contextComponent(Batman.mixin({}, this.tagObject.props, extraProps), this.tagObject.props.children);
-      debugger;
-      return newTag;
+      this.descriptor.contextObserver.setContext(this.attrArg, this.filteredValue || null);
+      return this.descriptor;
     };
 
     return ContextAttributeBinding;
@@ -345,9 +282,12 @@
       var eventHandlers, handler;
       handler = this.filteredValue;
       eventHandlers = {};
-      eventHandlers["on" + (Batman.helpers.camelize(this.attrArg))] = handler;
+      eventHandlers["on" + (Batman.helpers.camelize(this.attrArg))] = function(e) {
+        e.preventDefault();
+        return handler.apply(this, arguments);
+      };
       this.safelySetProps(eventHandlers);
-      return this.tagObject;
+      return this.descriptor;
     };
 
     return EventBinding;
@@ -362,23 +302,90 @@
     }
 
     ForEachBinding.prototype.applyBinding = function() {
-      var attrArg, list, prototypeNode;
-      prototypeNode = this.tagObject;
-      attrArg = this.attrArg;
-      delete prototypeNode.props["data-foreach-" + attrArg];
-      list = this.parentComponent.enumerate(this.keypath, attrArg, function(item) {
-        var cpt, extraProps;
-        extraProps = {};
-        extraProps[attrArg] = item;
-        cpt = cloneComponent(prototypeNode, extraProps);
-        return cpt;
-      });
+      var baseContext, children, collection, collectionName, component, contextObserver, contextTarget, descriptor, displayName, forEachProp, innerContext, item, itemName, key, list, newProps, props, type, _getKey, _ref;
+      _getKey = this._getEnumerateKey;
+      itemName = this.attrArg;
+      collectionName = this.keypath;
+      collection = this.filteredValue;
+      _ref = this.descriptor, type = _ref.type, children = _ref.children, props = _ref.props;
+      forEachProp = {};
+      forEachProp["data-foreach-" + itemName] = true;
+      Batman.unmixin(props, forEachProp);
+      displayName = Batman.helpers.camelize("enumerate_" + itemName + "_in_" + collectionName.split(".")[0]);
+      baseContext = this.descriptor.contextObserver.get('baseContext');
+      delete baseContext[itemName];
+      component = this.descriptor.contextObserver.component;
+      if (collection != null ? collection.toArray : void 0) {
+        collection = this.lookupKeypath("" + this.keypath + ".toArray");
+      }
+      list = (function() {
+        var _i, _len, _results;
+        _results = [];
+        for (_i = 0, _len = collection.length; _i < _len; _i++) {
+          item = collection[_i];
+          innerContext = Batman.extend({}, baseContext);
+          key = _getKey(item);
+          innerContext[itemName] = item;
+          contextTarget = new Batman.Object(innerContext);
+          contextObserver = new Batman.ContextObserver({
+            target: contextTarget,
+            component: component
+          });
+          newProps = Batman.mixin({
+            item: item,
+            key: key
+          }, props);
+          descriptor = {
+            type: type,
+            children: cloneDescriptor(children),
+            props: newProps,
+            contextObserver: contextObserver
+          };
+          _results.push(bindBatmanDescriptor(descriptor));
+        }
+        return _results;
+      })();
       return list;
+    };
+
+    ForEachBinding.prototype._getEnumerateKey = function(item) {
+      if (item.hashKey != null) {
+        return item.hashKey();
+      } else {
+        return JSON.stringify(item);
+      }
     };
 
     return ForEachBinding;
 
   })(Batman.DOM.React.AbstractBinding);
+
+  cloneDescriptor = function(descriptor, ctx) {
+    var argType, item, key, newDescriptor, value, _i, _len, _results;
+    argType = Batman.typeOf(descriptor);
+    switch (argType) {
+      case "Array":
+        _results = [];
+        for (_i = 0, _len = descriptor.length; _i < _len; _i++) {
+          item = descriptor[_i];
+          _results.push(cloneDescriptor(item));
+        }
+        return _results;
+      case "Object":
+        newDescriptor = {};
+        for (key in descriptor) {
+          value = descriptor[key];
+          if (key === "contextObserver") {
+            continue;
+          } else {
+            newDescriptor[key] = cloneDescriptor(value);
+          }
+        }
+        return newDescriptor;
+      default:
+        return descriptor;
+    }
+  };
 
   Batman.DOM.React.HideIfBinding = (function(_super) {
     __extends(HideIfBinding, _super);
@@ -391,7 +398,7 @@
       var contentValue;
       contentValue = this.filteredValue;
       Batman.DOM.React.ShowIfBinding.prototype._showIf.call(this, !contentValue);
-      return this.tagObject;
+      return this.descriptor;
     };
 
     return HideIfBinding;
@@ -409,7 +416,7 @@
       var attrArg;
       attrArg = this.attrArg ? "-" + this.attrArg : "";
       console.warn("This binding is not supported: <" + this.tagName + " data-" + this.bindingName + attrArg + "=" + this.keypath + " />");
-      return this.tagObject;
+      return this.descriptor;
     };
 
     return NotImplementedBinding;
@@ -426,16 +433,13 @@
     RemoveClassBinding.prototype.applyBinding = function() {
       var className;
       if (this.filteredValue) {
-        className = this.tagObject.props.className || "";
+        className = this.descriptor.props.className || "";
         className = className.replace("" + this.attrArg, "");
         this.safelySetProps({
           className: className
         });
-      } else if (this.tagObject.props['data-clone']) {
-        this.filteredValue = !this.filteredValue;
-        Batman.DOM.React.AddClassBinding.prototype.applyBinding.apply(this);
       }
-      return this.tagObject;
+      return this.descriptor;
     };
 
     return RemoveClassBinding;
@@ -461,7 +465,7 @@
         onClick: onClick,
         href: href
       });
-      return this.tagObject;
+      return this.descriptor;
     };
 
     return RouteBinding;
@@ -479,12 +483,12 @@
       var contentValue;
       contentValue = this.filteredValue;
       this._showIf(!!contentValue);
-      return this.tagObject;
+      return this.descriptor;
     };
 
     ShowIfBinding.prototype._showIf = function(trueOrFalse) {
       var style;
-      style = Batman.mixin({}, this.tagObject.props.style || {});
+      style = Batman.mixin({}, this.descriptor.props.style || {});
       if (!trueOrFalse) {
         style.display = 'none !important';
       } else {
@@ -523,17 +527,17 @@
       HTMLPath = "" + routingKey + "/" + action;
       return Batman.View.store.onResolved(HTMLPath, (function(_this) {
         return function() {
-          var displayName, html, reactCode, render, wrappedHTML;
+          var displayName, html, reactCode, renderBatman, wrappedHTML;
           html = Batman.View.store.get(HTMLPath);
           wrappedHTML = "/** @jsx Batman.DOM */\n<div>" + html + "</div>";
           reactCode = JSXTransformer.transform(wrappedHTML).code;
           displayName = componentName;
-          render = function() {
+          renderBatman = function() {
             return eval(reactCode);
           };
           componentClass = Batman.createComponent({
             displayName: displayName,
-            render: render
+            renderBatman: renderBatman
           });
           Batman.currentApp[componentName] = componentClass;
           console.log("Defined React Component: " + componentName);
@@ -596,24 +600,20 @@
     return (_ref = options.frame) != null ? _ref.finishOperation() : void 0;
   };
 
-  Batman.createComponent = function(options) {
-    options.mixins = options.mixins || [];
-    options.mixins.push(Batman.ReactMixin);
-    return React.createClass(options);
-  };
-
   Batman.ContextObserver = (function(_super) {
     __extends(ContextObserver, _super);
 
     function ContextObserver(_arg) {
       this.component = _arg.component, this.target = _arg.target;
       ContextObserver.__super__.constructor.call(this, {});
+      this._alreadyObserving = {};
       this.forceUpdate = this._forceUpdate.bind(this);
       this.on("changed", this.forceUpdate);
     }
 
     ContextObserver.prototype._targets = function() {
-      return [this.target, Batman.currentApp];
+      var _ref, _ref1;
+      return this._targetArray || (this._targetArray = ((_ref = this.component) != null ? (_ref1 = _ref.props) != null ? _ref1.controller : void 0 : void 0) ? [this.target, this.component.props.controller, Batman.currentApp] : [this.target, Batman.currentApp]);
     };
 
     ContextObserver.prototype._forceUpdate = function() {
@@ -644,12 +644,16 @@
 
     ContextObserver.prototype._observeKeypath = function(keypath) {
       var base, prop;
+      if (this._alreadyObserving[keypath]) {
+        return;
+      }
+      this._alreadyObserving[keypath] = true;
       base = this._baseForKeypath(keypath);
       prop = base.property(keypath);
       this.set(keypath, prop);
       prop.observe(this.forceUpdate);
-      return prop.observe(function() {
-        return reactDebug("forceUpdate because of " + prop.key);
+      return prop.observe(function(nv, ov) {
+        return reactDebug("forceUpdate because of " + prop.key + " " + (Batman.Filters.truncate(JSON.stringify(ov), 15)) + " -> " + (Batman.Filters.truncate(JSON.stringify(nv), 15)));
       });
     };
 
@@ -677,7 +681,7 @@
       base = this._baseForKeypath(keypath);
       if (base != null) {
         return (_ref = Batman.Property.forBaseAndKey(base, keypath)) != null ? _ref.setValue(value) : void 0;
-      } else if (value != null) {
+      } else if (typeof value !== "undefined") {
         this.target.set(keypath, value);
         return this._observeKeypath(keypath);
       }
@@ -715,71 +719,16 @@
           if (property != null) {
             property.forget(_this.forceUpdate);
           }
+          _this.forget(keypathName);
           return _this.unset(keypathName);
         };
       })(this));
-      this.off();
-      return this.forget();
+      return this.off();
     };
 
     return ContextObserver;
 
   })(Batman.Hash);
-
-  safelySetProps = function(tagObject, props) {
-    if (tagObject.isMounted()) {
-      return tagObject.setProps(props);
-    } else {
-      return Batman.mixin(tagObject.props, props);
-    }
-  };
-
-  (_base1 = Batman.DOM).React || (_base1.React = {});
-
-  Batman.DOM.React.TAG_NAME_MAPPING = {
-    ReactDOMButton: "button",
-    ReactDOMInput: "input",
-    ReactDOMOption: "option",
-    ReactDOMForm: "form"
-  };
-
-  cloneComponent = function(component, extraProps) {
-    var children, componentType, constructor, cpt, newProps, originalTagName, tagName, _i, _len, _results;
-    if (extraProps == null) {
-      extraProps = {};
-    }
-    if (component == null) {
-      return;
-    }
-    componentType = Batman.typeOf(component);
-    switch (false) {
-      case componentType !== "String":
-        return component;
-      case componentType !== "Array":
-        _results = [];
-        for (_i = 0, _len = component.length; _i < _len; _i++) {
-          cpt = component[_i];
-          _results.push(cloneComponent(cpt));
-        }
-        return _results;
-      case !(tagName = component.constructor.displayName):
-        originalTagName = tagName;
-        tagName = Batman.DOM.React.TAG_NAME_MAPPING[tagName] || tagName;
-        newProps = Batman.mixin({
-          "data-clone": true
-        }, component.props, extraProps);
-        children = cloneComponent(component.props.children);
-        constructor = component.BatmanConstructor || Batman.DOM[tagName];
-        cpt = constructor(newProps, children);
-        if (tagName === "p") {
-          console.log("p is owned by " + cpt._owner.constructor.displayName);
-        }
-        return cpt;
-      default:
-        debugger;
-        return console.warn("cloneComponent failed: No tagName for ", component);
-    }
-  };
 
   Batman.DOM.reactReaders = {
     bind: Batman.DOM.React.BindBinding,
@@ -802,50 +751,24 @@
     addclass: Batman.DOM.React.AddClassBinding,
     removeclass: Batman.DOM.React.RemoveClassBinding,
     context: Batman.DOM.React.ContextAttributeBinding,
+    formfor: Batman.DOM.React.ContextAttributeBinding,
     source: Batman.DOM.React.BindAttributeBinding
   };
 
   _ref = React.DOM;
   _fn = function(tagName, tagFunc) {
     return Batman.DOM[tagName] = function() {
-      var attrArg, bindingClass, bindingName, children, classes, key, keyParts, props, tagObject, value;
+      var children, classes, descriptor, props;
       props = arguments[0], children = 2 <= arguments.length ? __slice.call(arguments, 1) : [];
       if (classes = props != null ? props["class"] : void 0) {
         props.className = classes;
         delete props["class"];
       }
-      tagObject = tagFunc.call.apply(tagFunc, [React.DOM, props].concat(__slice.call(children)));
-      tagObject.BatmanConstructor = Batman.DOM[tagName];
-      for (key in props) {
-        value = props[key];
-        if (!(key.substr(0, 5) === "data-")) {
-          continue;
-        }
-        keyParts = key.split("-");
-        bindingName = keyParts[1];
-        if (bindingName === "clone") {
-          continue;
-        }
-        if (keyParts.length > 2) {
-          attrArg = keyParts.slice(2).join("-");
-        } else {
-          attrArg = void 0;
-        }
-        if (attrArg != null) {
-          bindingClass = Batman.DOM.reactAttrReaders[bindingName];
-        } else {
-          bindingClass = Batman.DOM.reactReaders[bindingName];
-        }
-        if (!bindingClass) {
-          console.warn("No binding found for " + key + "=" + value + " on " + tagName);
-        } else {
-          tagObject = new bindingClass(tagObject, bindingName, value, attrArg).applyBinding();
-        }
-        if (bindingName === "foreach") {
-          break;
-        }
-      }
-      return tagObject;
+      return descriptor = {
+        type: tagName,
+        props: props,
+        children: children
+      };
     };
   };
   for (tagName in _ref) {
@@ -864,38 +787,10 @@
     componentWillUnmount: function() {
       return this._observer.die();
     },
-    updateKeypath: function(keypath) {
-      return (function(_this) {
-        return function(e) {
-          var value;
-          value = (function() {
-            switch (e.target.type.toUpperCase()) {
-              case "CHECKBOX":
-                return e.target.checked;
-              default:
-                return e.target.value;
-            }
-          })();
-          reactDebug("updating " + keypath + " to: ", value);
-          return _this._observer.setContext(keypath, value);
-        };
-      })(this);
-    },
-    sourceKeypath: function(keypath) {
-      var val;
-      if (!keypath) {
-        debugger;
-      }
-      val = this._observer.getContext(keypath);
-      return val;
-    },
-    setContext: function(key, value) {
-      return this._observer.setContext(key, value);
-    },
     _observeContext: function(props) {
       var target;
       props || (props = this.props);
-      target = props.contextTarget || props.controller;
+      target = props.contextTarget || new Batman.Object;
       reactDebug("observing contextTarget", target);
       if (this._observer) {
         this._observer.die();
@@ -905,47 +800,76 @@
         component: this
       });
     },
-    enumerate: function(setName, itemName, generator) {
-      var baseContext, components, controller, displayName, iterationComponent, render, set, _getKey;
-      _getKey = this._getEnumerateKey;
-      set = this.sourceKeypath(setName);
-      this.sourceKeypath("" + setName + ".toArray");
-      displayName = Batman.helpers.camelize("enumerate_" + itemName + "_in_" + setName.split(".")[0]);
-      render = function() {
-        return generator.call(this);
-      };
-      iterationComponent = Batman.createComponent({
-        render: render,
-        displayName: displayName
-      });
-      baseContext = this._observer.get('baseContext');
-      delete baseContext[itemName];
-      controller = this.props.controller;
-      components = set.map(function(item) {
-        var contextTarget, cpt, innerContext, innerProps, key;
-        innerContext = Batman.extend({}, baseContext);
-        innerContext[itemName] = item;
-        contextTarget = new Batman.Object(innerContext);
-        key = _getKey(item);
-        innerProps = {
-          controller: controller,
-          contextTarget: contextTarget,
-          item: item,
-          key: key
-        };
-        cpt = iterationComponent(innerProps);
-        cpt._owner = cpt;
-        return cpt;
-      });
+    renderTree: function() {
+      var components, tree;
+      tree = this.renderBatman();
+      tree.contextObserver = this._observer;
+      components = bindBatmanDescriptor(tree);
       return components;
-    },
-    _getEnumerateKey: function(item) {
-      if (item.hashKey != null) {
-        return item.hashKey();
+    }
+  };
+
+  bindBatmanDescriptor = function(descriptor) {
+    var attrArg, bindingClass, bindingName, child, children, descriptorType, key, keyParts, newChildren, props, type, value, _ref1, _ref2;
+    if (descriptor == null) {
+      descriptor = {};
+    }
+    descriptorType = Batman.typeOf(descriptor);
+    if (descriptorType === "String") {
+      return descriptor;
+    }
+    _ref1 = descriptor.props;
+    for (key in _ref1) {
+      value = _ref1[key];
+      if (!(key.substr(0, 5) === "data-")) {
+        continue;
+      }
+      keyParts = key.split("-");
+      bindingName = keyParts[1];
+      if (keyParts.length > 2) {
+        attrArg = keyParts.slice(2).join("-");
       } else {
-        return JSON.stringify(item);
+        attrArg = void 0;
+      }
+      if (attrArg != null) {
+        bindingClass = Batman.DOM.reactAttrReaders[bindingName];
+      } else {
+        bindingClass = Batman.DOM.reactReaders[bindingName];
+      }
+      if (!bindingClass) {
+        console.warn("No binding found for " + key + "=" + value + " on " + descriptor.type);
+      } else {
+        descriptor = new bindingClass(descriptor, bindingName, value, attrArg).applyBinding();
+        if (bindingName === "foreach") {
+          break;
+        }
       }
     }
+    if (descriptor != null ? descriptor.type : void 0) {
+      type = descriptor.type, props = descriptor.props, children = descriptor.children;
+      newChildren = (function() {
+        var _i, _len, _results;
+        _results = [];
+        for (_i = 0, _len = children.length; _i < _len; _i++) {
+          child = children[_i];
+          if (child.contextObserver == null) {
+            child.contextObserver = descriptor.contextObserver;
+          }
+          _results.push(bindBatmanDescriptor(child));
+        }
+        return _results;
+      })();
+      return (_ref2 = React.DOM)[type].apply(_ref2, [props].concat(__slice.call(newChildren)));
+    } else {
+      return descriptor;
+    }
+  };
+
+  Batman.createComponent = function(options) {
+    options.mixins = options.mixins || [];
+    options.mixins.push(Batman.ReactMixin);
+    options.render = Batman.ReactMixin.renderTree;
+    return React.createClass(options);
   };
 
   Batman.config.pathToApp = window.location.pathname;
@@ -967,12 +891,11 @@
 
     App.on('run', function() {
       App.Animal.load();
-      setTimeout((function(_this) {
+      return setTimeout((function(_this) {
         return function() {
           return _this._seedData();
         };
       })(this), 5000);
-      return Batman.redirect("/");
     });
 
     App._seedData = function() {
@@ -1053,9 +976,14 @@
     AnimalsController.prototype.routingKey = 'animals';
 
     AnimalsController.prototype.index = function(params) {
-      this.set('newAnimal', new App.Animal);
-      this.set('animals', App.Animal.get('all.sortedBy.name'));
-      return this.renderReact();
+      App.Animal.load((function(_this) {
+        return function() {
+          _this.set('newAnimal', new App.Animal);
+          _this.set('animals', App.Animal.get('all.sortedBy.name'));
+          return _this.renderReact();
+        };
+      })(this));
+      return this.render(false);
     };
 
     AnimalsController.prototype.edit = function(animal) {
@@ -1072,10 +1000,11 @@
           if (err) {
             throw err;
           }
-          return _this.set('animal', record);
+          _this.set('animal', record);
+          return _this.renderReact();
         };
       })(this));
-      return this.renderReact();
+      return this.render(false);
     };
 
     AnimalsController.prototype.save = function(animal) {

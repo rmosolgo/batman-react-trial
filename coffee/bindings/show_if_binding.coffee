@@ -2,10 +2,10 @@ class Batman.DOM.React.ShowIfBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
     contentValue = @filteredValue
     @_showIf(!!contentValue)
-    @tagObject
+    @descriptor
 
   _showIf: (trueOrFalse) ->
-    style = Batman.mixin({}, @tagObject.props.style || {})
+    style = Batman.mixin({}, @descriptor.props.style || {})
     if !trueOrFalse
       style.display = 'none !important'
     else

@@ -1,11 +1,7 @@
-# Bindings are shortlived objects which manage the observation of any keypaths a `data` attribute depends on.
-# Bindings parse any keypaths which are filtered and use an accessor to apply the filters, and thus enjoy
-# the automatic trigger and dependency system that Batman.Objects use. Every, and I really mean every method
-# which uses filters has to be defined in terms of a new binding. This is so that the proper order of
-# objects is traversed and any observers are properly attached.
+# Mostly copy-pasted from Batman.DOM.AbstractBinding
 Batman.DOM.React ||= {}
 
-class Batman.DOM.React.AbstractBinding extends Batman.Object
+class Batman.DOM.React.AbstractBinding
   # A beastly regular expression for pulling keypaths out of the JSON arguments to a filter.
   # Match either strings, object literals, or keypaths.
   keypath_rx = ///
@@ -33,41 +29,30 @@ class Batman.DOM.React.AbstractBinding extends Batman.Object
   get_rx = /(?!^\s*)\[(.*?)\]/g
 
   # The `filteredValue` which calculates the final result by reducing the initial value through all the filters.
-  @accessor 'filteredValue',
-    get: ->
-      unfilteredValue = @get('unfilteredValue')
-      self = this
-      if @filterFunctions.length > 0
-        result = @filterFunctions.reduce((value, fn, i) ->
-          # Get any argument keypaths from the context stored at parse time.
-          args = self.filterArguments[i].map (argument) ->
-            if argument._keypath
-              self.lookupKeypath(argument._keypath)
-            else
-              argument
+  getFilteredValue: ->
+    unfilteredValue = @getUnfilteredValue()
+    self = this
+    if @filterFunctions.length > 0
+      result = @filterFunctions.reduce((value, fn, i) ->
+        # Get any argument keypaths from the context stored at parse time.
+        args = self.filterArguments[i].map (argument) ->
+          if argument._keypath
+            self.lookupKeypath(argument._keypath)
+          else
+            argument
 
-          # Apply the filter.
-          args.unshift value
-          args.push undefined while args.length < (fn.length - 1)
-          args.push self
-          fn.apply(self.view, args)
-        , unfilteredValue)
+        # Apply the filter.
+        args.unshift value
+        args.push undefined while args.length < (fn.length - 1)
+        args.push self
+        fn.apply(self.view, args)
+      , unfilteredValue)
 
-        result
-      else
-        unfilteredValue
-
-    # We ignore any filters for setting, because they often aren't reversible.
-    set: (_, newValue) -> @set('unfilteredValue', newValue)
-
+      result
+    else
+      unfilteredValue
   # The `unfilteredValue` is whats evaluated each time any dependents change.
-  @accessor 'unfilteredValue',
-    get: -> @_unfilteredValue(@get('key'))
-    set: (_, value) ->
-      if k = @get('key')
-        @view.setKeypath(k, value)
-      else
-        @set('value', value)
+  getUnfilteredValue: -> @_unfilteredValue(@key)
 
   _unfilteredValue: (key) ->
     # If we're working with an `@key` and not an `@value`, find the context the key belongs to so we can
@@ -75,82 +60,16 @@ class Batman.DOM.React.AbstractBinding extends Batman.Object
     if key
       @lookupKeypath(key)
     else
-      @get('value')
+      @value
 
   lookupKeypath: (keypath) ->
-    @parentComponent.sourceKeypath(keypath)
+    @descriptor.contextObserver.getContext(keypath)
 
-
-  onlyAll = Batman.BindingDefinitionOnlyObserve.All
-  onlyData = Batman.BindingDefinitionOnlyObserve.Data
-  onlyNode = Batman.BindingDefinitionOnlyObserve.Node
-
-  bindImmediately: true
-  shouldSet: true
-  isInputBinding: false
-  escapeValue: true
-  onlyObserve: onlyAll
-  skipParseFilter: false
-
-  constructor: (@tagObject, @bindingName, @keypath, @attrArg) ->
-    rawTagName = @tagObject.constructor.displayName
-
-    @tagName =  Batman.DOM.React.TAG_NAME_MAPPING[rawTagName] || rawTagName
-    @parentComponent = @tagObject._owner
-    # {@node, @keypath, @view} = definition
-    # @onlyObserve = definition.onlyObserve if definition.onlyObserve
-    # @skipParseFilter = definition.skipParseFilter if definition.skipParseFilter?
-
-
+  constructor: (@descriptor, @bindingName, @keypath, @attrArg) ->
+    @tagName =  @descriptor.type
     # Pull out the `@key` and filter from the `@keypath`.
-    @parseFilter() if not @skipParseFilter
-    @filteredValue = @get('filteredValue')
-    # viewClass = @backWithView if typeof @backWithView is 'function'
-    # @setupBackingView(viewClass, definition.viewOptions) if @backWithView
-
-    # Observe the node and the data.
-    # @bind() if @bindImmediately
-
-  # isTwoWay: -> @key? && @filterFunctions.length is 0
-
-  # bind: ->
-  #   # Attach the observers.
-  #   if @node and @onlyObserve in [onlyAll, onlyNode] and Batman.DOM.nodeIsEditable(@node)
-  #     Batman.DOM.events.change @node, @_fireNodeChange.bind(this)
-
-  #     # Usually, we let the HTML value get updated upon binding by `observeAndFire`ing the dataChange
-  #     # function below. When dataChange isn't attached, we update the JS land value such that the
-  #     # sync between DOM and JS is maintained.
-  #     if @onlyObserve is onlyNode
-  #       @_fireNodeChange()
-
-  #   # Observe the value of this binding's `filteredValue` and fire it immediately to update the node.
-  #   if @onlyObserve in [onlyAll, onlyData]
-  #     @observeAndFire 'filteredValue', @_fireDataChange
-
-  #   @view._addChildBinding(this)
-
-  # _fireNodeChange: (event) ->
-  #   @shouldSet = false
-  #   val = @value || @get('keyContext')
-  #   @nodeChange?(@node, val, event)
-  #   @fire 'nodeChange', @node, val
-  #   @shouldSet = true
-
-  # _fireDataChange: (value) =>
-  #   if @shouldSet
-  #     @dataChange?(value, @node)
-  #     @fire 'dataChange', value, @node
-
-  die: ->
-    @forget()
-    @_batman.properties?.forEach (key, property) -> property.die()
-
-    @node = null
-    @keypath = null
-    @view = null
-    @backingView = null
-    @superview = null
+    @parseFilter()
+    @filteredValue = @getFilteredValue()
 
   parseFilter: ->
     # Store the function which does the filtering and the arguments (all except the actual value to apply the
@@ -183,10 +102,7 @@ class Batman.DOM.React.AbstractBinding extends Batman.Object
         filterName = filterString.substr(0, split)
         args = filterString.substr(split)
 
-        # If the filter exists, grab it; otherwise, bail.
-        unless filter = (@view?._batman.get('filters')?[filterName] || Batman.Filters[filterName])
-          return Batman.developer.error "Unrecognized filter '#{filterName}' in key \"#{@keypath}\"!"
-
+        filter = Batman.Filters[filterName]
         @filterFunctions.push filter
 
         # Get the arguments for the filter by parsing the args as JSON, or
@@ -210,55 +126,28 @@ class Batman.DOM.React.AbstractBinding extends Batman.Object
       start + replacement
     JSON.parse("[#{segment}]")
 
-  # setupBackingView: (viewClass, viewOptions) ->
-  #   return @backingView if @backingView
-  #   return @backingView if @node and @backingView = Batman._data(@node, 'view')
-
-  #   @superview = @view
-
-  #   viewOptions ||= {}
-  #   viewOptions.node ?= @node
-  #   viewOptions.parentNode ?= @node
-  #   viewOptions.isBackingView = true
-
-  #   @backingView = new (viewClass || Batman.BackingView)(viewOptions)
-  #   @superview.subviews.add(@backingView)
-  #   Batman._data(@node, 'view', @backingView) if @node
-
-  #   return @backingView
-
   safelySetProps: (props) ->
-    if @tagObject.isMounted()
-      @tagObject.setProps(props)
-    else
-      Batman.mixin(@tagObject.props, props)
+    Batman.mixin(@descriptor.props, props)
 
 class Batman.DOM.React.AddClassBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
     if @filteredValue
-      className = @tagObject.props.className || ""
+      className = @descriptor.props.className || ""
       className += " #{@attrArg}"
       # reactDebug "AddClassBinding setting '#{@attrArg}'"
       @safelySetProps({className})
-    else if @tagObject.props['data-clone']
-      # could have been falsely done by the prototype component
-      @filteredValue = !@filteredValue
-      Batman.DOM.React.RemoveClassBinding::applyBinding.apply(@)
-
-    @tagObject
+    @descriptor
 class Batman.DOM.React.BindAttributeBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
     newProps = {}
     newProps[@attrArg] = @filteredValue
-    # console.log "BindAttributeBinding #{@get("_batmanID")} setting #{@tagName} #{@tagObject.props.type} #{@attrArg}=#{newProps[@attrArg]}", @tagObject.props.children
     @safelySetProps(newProps)
-    @tagObject
+    @descriptor
 class Batman.DOM.React.BindBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
     switch @tagName
       when "input"
-        onChange = @parentComponent.updateKeypath(@keypath)
-        inputType = @tagObject.props.type.toLowerCase()
+        inputType = @descriptor.props.type.toLowerCase()
         newProps = switch inputType
           when "checkbox"
             if !!@filteredValue
@@ -266,58 +155,49 @@ class Batman.DOM.React.BindBinding extends Batman.DOM.React.AbstractBinding
             else
               {}
           when "radio"
-            # console.log @filteredValue, @tagObject.props.value
-            if @filteredValue? and @filteredValue is @tagObject.props.value
+            if @filteredValue? and @filteredValue is @descriptor.props.value
               {checked: true}
             else
               {}
           else
             {value: @filteredValue}
-        newProps.onChange = onChange
+        newProps.onChange = @updateKeypath()
       when "select"
-        debugger
         newProps =
           value: @filteredValue
-          onChange: @parentComponent.updateKeypath(@keypath)
+          onChange: @updateKeypath()
       else # set innerText
 
         if @filteredValue?
-          contentValue = "#{@filteredValue}"
-          newProps = {children: [contentValue]}
+          @descriptor.children = "#{@filteredValue}"
+          # console.log "BindBinding #{@keypath} => #{@filteredValue}"
+          newProps = {}
 
     @safelySetProps(newProps)
-    # console.log "BindBinding #{JSON.stringify(newProps)}"
-    @tagObject
+    @descriptor
+
+
+  updateKeypath: (keypath=@keypath) ->
+    observer = @descriptor.contextObserver
+    (e) =>
+      value = switch e.target.type.toUpperCase()
+        when "CHECKBOX" then e.target.checked
+        else e.target.value
+      reactDebug "updating " + keypath + " to: ", value
+      observer.setContext(keypath, value)
 class Batman.DOM.React.ContextAttributeBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
-    @parentComponent.setContext(@attrArg, @filteredValue)
-    baseContext = @parentComponent._observer.get('baseContext')
-    extraProps = {
-      contextTarget: new Batman.Object(baseContext)
-    }
-    displayName = Batman.helpers.camelize("#{@parentComponent.constructor.displayName}_context_#{@attrArg}_component")
-    console.log "context #{displayName}", baseContext
-    # if !Batman.DOM.React.ContextAttributeBinding[displayName]
-    #   prototypeNode = @tagObject
-    #   render = ->
-    #     BatmanConstructor = Batman.DOM.React.ContextAttributeBinding[displayName]
-    #     cloneComponent(prototypeNode)
-    #   Batman.DOM.React.ContextAttributeBinding[displayName] =  Batman.createComponent({render, displayName})
-    prototypeNode = @tagObject
-    render = ->
-      @BatmanConstructor = contextComponent
-      cloneComponent(prototypeNode)
-    contextComponent = Batman.createComponent({render, displayName})
-    newTag = contextComponent(Batman.mixin({}, @tagObject.props, extraProps), @tagObject.props.children)
-    debugger
-    newTag
+    @descriptor.contextObserver.setContext(@attrArg, @filteredValue || null)
+    @descriptor
 class Batman.DOM.React.EventBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
     handler = @filteredValue
     eventHandlers = {}
-    eventHandlers["on#{Batman.helpers.camelize(@attrArg)}"] = handler
+    eventHandlers["on#{Batman.helpers.camelize(@attrArg)}"] = (e) ->
+      e.preventDefault()
+      handler.apply(@, arguments)
     @safelySetProps(eventHandlers)
-    @tagObject
+    @descriptor
 
 
   # _unfilteredValue: (key) ->
@@ -334,21 +214,71 @@ class Batman.DOM.React.EventBinding extends Batman.DOM.React.AbstractBinding
 
 class Batman.DOM.React.ForEachBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
-    prototypeNode = @tagObject
-    attrArg = @attrArg
-    delete prototypeNode.props["data-foreach-#{attrArg}"]
+    _getKey = @_getEnumerateKey
+    itemName = @attrArg
+    collectionName = @keypath
+    collection = @filteredValue
+    {type, children, props} = @descriptor
+    forEachProp = {}
+    forEachProp["data-foreach-#{itemName}"] = true
+    Batman.unmixin(props, forEachProp)
 
-    list = @parentComponent.enumerate @keypath, attrArg, (item) ->
-      extraProps = {}
-      extraProps[attrArg] = item
-      cpt = cloneComponent(prototypeNode, extraProps)
-      cpt
+    displayName = Batman.helpers.camelize("enumerate_" + itemName + "_in_" + collectionName.split(".")[0])
+
+    # only pass base objects to the child so that nested keypaths will be looked up against it
+    baseContext = @descriptor.contextObserver.get('baseContext')
+    delete baseContext[itemName]
+
+    component = @descriptor.contextObserver.component
+
+    if collection?.toArray
+      collection = @lookupKeypath("#{@keypath}.toArray")
+
+    list = for item in collection
+      innerContext = Batman.extend({}, baseContext)
+      key = _getKey(item)
+      innerContext[itemName] = item
+      # TODO: How can i not instantiate batman objects here??
+      contextTarget = new Batman.Object(innerContext)
+      contextObserver = new Batman.ContextObserver(target: contextTarget, component: component)
+      newProps = Batman.mixin({item, key}, props)
+      descriptor = {
+        type
+        children: cloneDescriptor(children)
+        props: newProps
+        contextObserver
+      }
+      # reactDebug "#{type} for #{itemName} #{item.get('name')} => #{JSON.stringify(newProps)} #{contextObserver.get('_batmanID')}", descriptor
+      bindBatmanDescriptor(descriptor)
     list
+
+  _getEnumerateKey: (item) ->
+    if item.hashKey?
+      item.hashKey()
+    else
+      JSON.stringify(item)
+
+cloneDescriptor = (descriptor, ctx) ->
+  argType = Batman.typeOf(descriptor)
+  switch argType
+    when "Array"
+      (cloneDescriptor(item) for item in descriptor)
+    when "Object"
+      newDescriptor = {}
+      for key, value of descriptor
+        if key in ["contextObserver"]
+          continue
+        else
+          newDescriptor[key] = cloneDescriptor(value)
+      newDescriptor
+    else
+      descriptor
+
 class Batman.DOM.React.HideIfBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
     contentValue = @filteredValue
     Batman.DOM.React.ShowIfBinding::_showIf.call(@, !contentValue)
-    @tagObject
+    @descriptor
 class Batman.DOM.React.NotImplementedBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
     attrArg = if @attrArg
@@ -356,19 +286,15 @@ class Batman.DOM.React.NotImplementedBinding extends Batman.DOM.React.AbstractBi
       else
         ""
     console.warn("This binding is not supported: <#{@tagName} data-#{@bindingName}#{attrArg}=#{@keypath} />")
-    @tagObject
+    @descriptor
 class Batman.DOM.React.RemoveClassBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
     if @filteredValue
-      className = @tagObject.props.className || ""
+      className = @descriptor.props.className || ""
       className = className.replace("#{@attrArg}", "")
       # reactDebug "RemoveClassBinding removing #{@attrArg}"
       @safelySetProps({className})
-    else if @tagObject.props['data-clone']
-      # could have been falsely done by the prototype component
-      @filteredValue = !@filteredValue
-      Batman.DOM.React.AddClassBinding::applyBinding.apply(@)
-    @tagObject
+    @descriptor
 class Batman.DOM.React.RouteBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
     path = if @filteredValue instanceof Batman.NamedRouteQuery
@@ -380,24 +306,21 @@ class Batman.DOM.React.RouteBinding extends Batman.DOM.React.AbstractBinding
       Batman.redirect(path)
     href = Batman.navigator.linkTo(path)
     @safelySetProps({onClick, href})
-    @tagObject
+    @descriptor
 class Batman.DOM.React.ShowIfBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
     contentValue = @filteredValue
     @_showIf(!!contentValue)
-    @tagObject
+    @descriptor
 
   _showIf: (trueOrFalse) ->
-    style = Batman.mixin({}, @tagObject.props.style || {})
+    style = Batman.mixin({}, @descriptor.props.style || {})
     if !trueOrFalse
       style.display = 'none !important'
     else
       delete style.display # in the context of a foreach binding, it could inherit a failed test from the prototype node
     @safelySetProps({style})
 # Batman.Controller::renderReact
-# Batman.ContextObserver
-# Batman.ReactMixin
-# Batman.createComponent
 
 Batman.HTMLStore::onResolved = (path, callback) ->
   if @get(path) == undefined
@@ -421,8 +344,8 @@ reactComponentForRoutingKeyAndAction = (routingKey, action, callback) ->
       wrappedHTML = "/** @jsx Batman.DOM */\n<div>#{html}</div>"
       reactCode = JSXTransformer.transform(wrappedHTML).code
       displayName = componentName
-      render = -> eval(reactCode)
-      componentClass = Batman.createComponent({displayName, render})
+      renderBatman = -> eval(reactCode)
+      componentClass = Batman.createComponent({displayName, renderBatman})
       Batman.currentApp[componentName] = componentClass
       console.log("Defined React Component: #{componentName}")
       callback(componentClass)
@@ -475,18 +398,18 @@ Batman.Controller::finishRenderReact = (options) ->
   reactDebug "rendered #{@routingKey}/#{options.action}", options.componentName
   options.frame?.finishOperation()
 
-Batman.createComponent = (options) ->
-  options.mixins = options.mixins or []
-  options.mixins.push Batman.ReactMixin
-  React.createClass options
 class Batman.ContextObserver extends Batman.Hash
   constructor: ({@component, @target}) ->
       super({})
+      @_alreadyObserving = {}
       @forceUpdate = @_forceUpdate.bind(@)
       @on "changed", @forceUpdate
 
   _targets: ->
-    [@target, Batman.currentApp]
+    @_targetArray ||= if @component?.props?.controller
+        [@target, @component.props.controller, Batman.currentApp]
+      else
+        [@target, Batman.currentApp]
 
   _forceUpdate: ->
     if @component.isMounted()
@@ -504,13 +427,14 @@ class Batman.ContextObserver extends Batman.Hash
     undefined
 
   _observeKeypath: (keypath) ->
+    return if @_alreadyObserving[keypath]
+    @_alreadyObserving[keypath] = true
     base = @_baseForKeypath(keypath)
     prop = base.property(keypath)
     @set(keypath, prop)
     prop.observe(@forceUpdate)
     # reactDebug("Observing #{prop.key} on", prop.base)
-    prop.observe ->
-      reactDebug "forceUpdate because of #{prop.key}"
+    prop.observe (nv, ov) -> reactDebug "forceUpdate because of #{prop.key} #{Batman.Filters.truncate(JSON.stringify(ov), 15)} -> #{Batman.Filters.truncate(JSON.stringify(nv), 15)}"
 
   getContext: (keypath) ->
     base = @_baseForKeypath(keypath)
@@ -531,7 +455,7 @@ class Batman.ContextObserver extends Batman.Hash
     base = @_baseForKeypath(keypath)
     if base?
       Batman.Property.forBaseAndKey(base, keypath)?.setValue(value)
-    else if value?
+    else if typeof value isnt "undefined"
       @target.set(keypath, value)
       @_observeKeypath(keypath)
 
@@ -554,49 +478,9 @@ class Batman.ContextObserver extends Batman.Hash
     @forEach (keypathName, property) =>
       # reactDebug "ContextObserver forgetting #{keypathName}"
       property?.forget(@forceUpdate)
+      @forget(keypathName)
       @unset(keypathName)
     @off()
-    @forget()
-
-
-
-safelySetProps = (tagObject, props) ->
-  if tagObject.isMounted()
-    tagObject.setProps(props)
-  else
-    Batman.mixin(tagObject.props, props)
-
-Batman.DOM.React ||= {}
-Batman.DOM.React.TAG_NAME_MAPPING = {
-  ReactDOMButton: "button"
-  ReactDOMInput: "input"
-  ReactDOMOption: "option"
-  ReactDOMForm: "form"
-}
-
-cloneComponent = (component, extraProps={}) ->
-  return unless component?
-  componentType = Batman.typeOf(component)
-  switch
-    when componentType is "String"
-      component
-    when componentType is "Array"
-      (cloneComponent(cpt) for cpt in component)
-    when tagName = component.constructor.displayName
-      originalTagName = tagName
-      tagName = Batman.DOM.React.TAG_NAME_MAPPING[tagName] || tagName
-      newProps = Batman.mixin({"data-clone" : true }, component.props, extraProps)
-      # reactDebug "Mixed in, got ", extraProps, newProps
-      children = cloneComponent(component.props.children)
-      constructor = component.BatmanConstructor || Batman.DOM[tagName]
-      cpt = constructor(newProps, children)
-      if tagName is "p"
-        console.log "p is owned by #{cpt._owner.constructor.displayName}"
-      cpt
-    else
-      debugger
-      console.warn("cloneComponent failed: No tagName for ", component)
-
 
 Batman.DOM.reactReaders =
   bind: Batman.DOM.React.BindBinding
@@ -629,10 +513,10 @@ Batman.DOM.reactAttrReaders =
   removeclass: Batman.DOM.React.RemoveClassBinding
   context: Batman.DOM.React.ContextAttributeBinding
   # track: (definition) ->
-  # formfor: Batman.DOM.React.NotImplementedBinding
   # style: (definition) ->
 
   ## WONTFIX:
+  formfor: Batman.DOM.React.ContextAttributeBinding
   source: Batman.DOM.React.BindAttributeBinding
 
 
@@ -643,37 +527,12 @@ for tagName, tagFunc of React.DOM
       if classes = props?.class
         props.className = classes
         delete props.class
-
-      tagObject = tagFunc.call(React.DOM, props, children...)
-      tagObject.BatmanConstructor = Batman.DOM[tagName]
-      for key, value of props when key.substr(0,5) is "data-"
-
-        keyParts = key.split("-")
-        bindingName = keyParts[1]
-
-        if bindingName is "clone"
-          continue
-
-        if keyParts.length > 2
-          attrArg = keyParts.slice(2).join("-") # allows data-addclass-alert--error
-        else # have to unset since this isn't in a closure
-          attrArg = undefined
-
-        # console.log "#{key}=#{value}", bindingName, attrArg
-        if attrArg?
-          bindingClass = Batman.DOM.reactAttrReaders[bindingName]
-        else
-          bindingClass = Batman.DOM.reactReaders[bindingName]
-
-        if !bindingClass
-          console.warn("No binding found for #{key}=#{value} on #{tagName}")
-        else
-          tagObject = new bindingClass(tagObject, bindingName, value, attrArg).applyBinding()
-
-        if bindingName is "foreach"
-          break
-
-      tagObject
+      # bindBatmanDescriptor will add context
+      descriptor = {
+        type: tagName
+        props
+        children
+      }
 
 
 
@@ -688,63 +547,59 @@ Batman.ReactMixin =
   componentWillUnmount: ->
     @_observer.die()
 
-  updateKeypath: (keypath) ->
-    (e) =>
-      value = switch e.target.type.toUpperCase()
-        when "CHECKBOX" then e.target.checked
-        else e.target.value
-      reactDebug "updating " + keypath + " to: ", value
-      @_observer.setContext keypath, value
-
-  sourceKeypath: (keypath) ->
-    if !keypath # or keypath is 'animalclass'
-      debugger
-    val = @_observer.getContext(keypath)
-    val
-
-
-  setContext: (key, value) ->
-    @_observer.setContext(key, value)
-
   _observeContext: (props) ->
     props ||= @props
-    target = props.contextTarget || props.controller
+    target = props.contextTarget || new Batman.Object
     reactDebug "observing contextTarget", target
     @_observer.die() if @_observer
     @_observer = new Batman.ContextObserver(target: target, component: this)
 
-  enumerate: (setName, itemName, generator) ->
-    _getKey = @_getEnumerateKey
-    set = @sourceKeypath(setName)
-    @sourceKeypath("#{setName}.toArray")
-    displayName = Batman.helpers.camelize("enumerate_" + itemName + "_in_" + setName.split(".")[0])
-    render = ->
-      generator.call(this)
-    iterationComponent = Batman.createComponent({render, displayName})
-
-    # only pass base objects to the child so that nested keypaths will be looked up against it
-    baseContext = @_observer.get('baseContext')
-    delete baseContext[itemName]
-
-    # reactDebug "baseContext", baseContext
-    controller = @props.controller
-    components = set.map (item) ->
-      innerContext = Batman.extend({}, baseContext)
-      innerContext[itemName] = item
-      contextTarget = new Batman.Object(innerContext)
-      key = _getKey(item)
-      innerProps = {controller, contextTarget, item, key}
-      cpt = iterationComponent(innerProps)
-      cpt._owner = cpt
-      cpt
+  renderTree: ->
+    tree = @renderBatman()
+    tree.contextObserver = @_observer
+    components = bindBatmanDescriptor(tree)
     components
 
-  _getEnumerateKey: (item) ->
-    if item.hashKey?
-      item.hashKey()
-    else
-      JSON.stringify(item)
+bindBatmanDescriptor = (descriptor = {}) ->
+  descriptorType = Batman.typeOf(descriptor)
+  return descriptor if descriptorType is "String"
 
+  for key, value of descriptor.props when key.substr(0,5) is "data-"
+    keyParts = key.split("-")
+    bindingName = keyParts[1]
+
+    if keyParts.length > 2
+      attrArg = keyParts.slice(2).join("-") # allows data-addclass-alert--error
+    else # have to unset since this isn't in a closure
+      attrArg = undefined
+
+    if attrArg?
+      bindingClass = Batman.DOM.reactAttrReaders[bindingName]
+    else
+      bindingClass = Batman.DOM.reactReaders[bindingName]
+
+    if !bindingClass
+      console.warn("No binding found for #{key}=#{value} on #{descriptor.type}")
+    else
+      descriptor = new bindingClass(descriptor, bindingName, value, attrArg).applyBinding()
+      # foreach binding returns an array of children!
+      if bindingName is "foreach"
+        break
+
+  if descriptor?.type
+    {type, props, children} = descriptor
+    newChildren = for child in children
+      child.contextObserver ?= descriptor.contextObserver
+      bindBatmanDescriptor(child)
+    React.DOM[type](props, newChildren...)
+  else
+    descriptor
+
+Batman.createComponent = (options) ->
+  options.mixins = options.mixins or []
+  options.mixins.push Batman.ReactMixin
+  options.render = Batman.ReactMixin.renderTree
+  React.createClass options
 Batman.config.pathToApp = window.location.pathname
 Batman.config.usePushState = false
 
@@ -759,7 +614,7 @@ class @App extends Batman.App
     setTimeout =>
         @_seedData()
       , 5000
-    Batman.redirect("/")
+    # Batman.redirect("/")
 
   # Just to make things interesting, make some Animals
   @_seedData: ->
@@ -795,9 +650,11 @@ class App.AnimalsController extends App.ApplicationController
   routingKey: 'animals'
 
   index: (params) ->
-    @set 'newAnimal', new App.Animal
-    @set 'animals', App.Animal.get('all.sortedBy.name')
-    @renderReact()
+    App.Animal.load =>
+      @set 'newAnimal', new App.Animal
+      @set 'animals', App.Animal.get('all.sortedBy.name')
+      @renderReact()
+    @render(false)
 
   edit: (animal) ->
     @set 'currentAnimal', animal.transaction()
@@ -808,7 +665,8 @@ class App.AnimalsController extends App.ApplicationController
     App.Animal.find params.id, (err, record) =>
       throw err if err
       @set 'animal', record
-    @renderReact()
+      @renderReact()
+    @render(false)
 
   save: (animal) ->
     wasNew = animal.get('isNew')
