@@ -2,9 +2,11 @@ var gulp = require('gulp');
 var coffee = require('gulp-coffee');
 var concat = require('gulp-concat');
 var shell = require('gulp-shell');
+var batmanTemplates = require("gulp-batman-templates");
+
 
 gulp.task('default', ['server'], function(){
-  gulp.watch('./**/*', ["build", "finalize"])
+  gulp.watch('./**/*', ["build", "build_html", "finalize"])
 });
 
 var appSources = ["./coffee/bindings/*.coffee","./coffee/react/*.coffee", "./coffee/*.coffee"]
@@ -23,10 +25,18 @@ gulp.task("build", function(){
 })
 
 gulp.task("finalize", function() {
-  gulp.src(["./build/app.js"])
+  gulp.src(["./build/app.js", "./build/templates.js"])
     .pipe(concat("application.js"))
     .pipe(gulp.dest("./"))
 });
+
+gulp.task("build_html", function(){
+  var stream = gulp.src(["./html/**/*.html"])
+    .pipe(batmanTemplates())
+    .pipe(concat('templates.js'))
+    .pipe(gulp.dest("./build/"))
+  return stream
+})
 
 // gulp.task("cjsx", shell.task(["cjsx -cbw -o build/ cjsx/"]))
 
