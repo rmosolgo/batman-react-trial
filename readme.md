@@ -5,7 +5,7 @@
 
 ## The Good
 
-- [HTML templates](https://github.com/rmosolgo/batman-react-trial/tree/master/html/animals) are [converted into React components](https://github.com/rmosolgo/batman-react-trial/blob/master/coffee/react/batman_react.coffee#L14)
+- [HTML templates](https://github.com/rmosolgo/batman-react-trial/tree/master/html/animals) are [converted into React components](https://github.com/rmosolgo/batman-react-trial/blob/master/coffee/react/batman_react.coffee#L14) (could be better: could be done at "compile"-time)
 - JSX is [invoked with `Batman.DOM`](https://github.com/rmosolgo/batman-react-trial/blob/master/coffee/react/batman_react.coffee#L30), whose [functions return descriptor-like objects](https://github.com/rmosolgo/batman-react-trial/blob/master/coffee/react/batman_react_dom.coffee#L40)
 - [`Batman.Controller::renderReact`](https://github.com/rmosolgo/batman-react-trial/blob/master/coffee/react/batman_react.coffee#L36) puts components into `data-yield` containers
 - `renderReact` is a [drop-in replacement](https://github.com/rmosolgo/batman-react-trial/blob/master/coffee/controllers.coffee#L25) for `render`
@@ -32,6 +32,7 @@ __TODO__:
 - support named default components (eg `AnimalsIndexComponent`) whose render functions are derived from HTML templates (a la [batman.js default views]()https://www.softcover.io/read/b5c051f3/batmanjs_mvc_cookbook/controller#sec-default_views)
 - implement the [rest of the bindings](https://github.com/rmosolgo/batman-react-trial/blob/master/coffee/react/batman_react_dom.coffee#L10)
 - add `data-component="#{myComponent}"` and use that for `data-view`, too
+- support HTML template => render function at compile time
 
 
 Development:
