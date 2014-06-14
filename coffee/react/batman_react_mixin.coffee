@@ -1,23 +1,37 @@
 
 Batman.ReactMixin =
   getInitialState: ->
+    reactDebug "getInitialState #{@constructor?.displayName || @props?.key}"
     @_observeContext()
     return {}
+
   willReceiveProps: (nextProps) ->
+    reactDebug "willReceiveProps #{@constructor?.displayName || @props?.key}", nextProps
     @_observeContext(nextProps)
 
   componentWillUnmount: ->
-    @_observer.die()
+    if @_observer.component is @ # don't let data-partials kill the main observer!
+      reactDebug "componentWillUnmount, killing observer"
+      @_observer.die()
 
   _observeContext: (props) ->
+    reactDebug "_observeContext", props
     props ||= @props
     if props.contextObserver
-      @_observer?.die()
-      @_observer = props.contextObserver
+      if @_observer? and @_observer isnt props.contextObserver
+        reactDebug "Killing observer because props.contextObserver was passed in"
+        @_observer?.die()
+      if !@_observer?
+        @_observer = props.contextObserver
     else
-      target = props.contextTarget || new Batman.Object
-      @_observer.die() if @_observer
-      @_observer = new Batman.ContextObserver(target: target, component: this)
+      target = props.contextTarget ||= new Batman.Object
+      if @_observer? && target isnt @_observer.target
+        reactDebug "Killing observer because new target passed in"
+        @_observer?.die()
+        @_observer = null
+      if !@_observer?
+        @props.contextTarget = target
+        @_observer = new Batman.ContextObserver(target: target, component: this)
 
   renderTree: ->
     tree = @renderBatman()

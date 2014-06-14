@@ -5,9 +5,8 @@ Batman.DOM.reactReaders =
   hideif: Batman.DOM.React.HideIfBinding
   partial: Batman.DOM.React.PartialBinding
   context: Batman.DOM.React.ContextBinding
-
+  debug: Batman.DOM.React.DebugBinding
   # TODO: add data-route-params
-  # context: (definition) ->
   # view: (definition) ->
   # contentfor: (definition) ->
   # yield: (definition) ->
@@ -30,7 +29,7 @@ Batman.DOM.reactAttrReaders =
   removeclass: Batman.DOM.React.RemoveClassBinding
   context: Batman.DOM.React.ContextAttributeBinding
   # track: (definition) ->
-  # style: (definition) ->
+  style: Batman.DOM.React.StyleAttributeBinding
 
   ## WONTFIX:
   formfor: Batman.DOM.React.ContextAttributeBinding
@@ -44,6 +43,11 @@ for tagName, tagFunc of React.DOM
       if classes = props?.class
         props.className = classes
         delete props.class
+
+      # style can be a string
+      if styles = props?.style
+        props.style = Batman.DOM.React.StyleAttributeBinding::styleStringToObject(styles)
+
       # bindBatmanDescriptor will add context
       descriptor = {
         type: tagName

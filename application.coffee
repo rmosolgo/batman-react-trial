@@ -76,7 +76,13 @@ class Batman.DOM.React.AbstractBinding
     firstPart = parts.shift()
     if obj = @descriptor.props.injectedContext[firstPart]
       if parts.length
-        hit = obj.get(parts.join("."))
+        path = parts.join(".")
+        hit = obj.get(path)
+        # HACK: how can I make contextObserver more self-sufficient?
+        # would be great to somehow coopt built-in source tracking
+        prop = obj.property(path)
+        if @descriptor.contextObserver.observeProperty(prop)
+          console.log("observing #{path} on #{firstPart}")
       else
         hit = obj
       return [true, hit]
@@ -84,6 +90,9 @@ class Batman.DOM.React.AbstractBinding
       for obj in @descriptor.props.injectedContext._injectedObjects
         if obj.get(firstPart)?
           hit = obj.get(keypath)
+          # HACK: See above
+          prop = obj.property(keypath)
+          @descriptor.contextObserver.observeProperty(prop)
           return [true, hit]
     else
       return [false, undefined]
@@ -218,6 +227,10 @@ class Batman.DOM.React.ContextBinding extends Batman.DOM.React.AbstractBinding
     @descriptor.props.injectedContext._injectedObjects ||= []
     @descriptor.props.injectedContext._injectedObjects.push(@filteredValue)
     @descriptor
+class Batman.DOM.React.DebugBinding extends Batman.DOM.React.AbstractBinding
+  applyBinding: ->
+    debugger
+    @descriptor
 class Batman.DOM.React.EventBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
     handler = @filteredValue
@@ -262,8 +275,7 @@ class Batman.DOM.React.ForEachBinding extends Batman.DOM.React.AbstractBinding
       key = _getKey(item)
       injectedContext = Batman.mixin({}, props.injectedContext)
       injectedContext[itemName] = item
-      newProps = Batman.mixin({key, injectedContext}, props)
-      console.log "ic", injectedContext
+      newProps = Batman.mixin({}, props, {key, injectedContext})
       descriptor = {
         type
         children: cloneDescriptor(children)
@@ -315,7 +327,7 @@ class Batman.DOM.React.PartialBinding extends Batman.DOM.React.AbstractBinding
     async = false
     Batman.reactComponentForHTMLPath @filteredValue, (componentClass) =>
       injectedContext = @descriptor.props.injectedContext
-      partialComponent = componentClass({injectedContext, contextObserver})
+      partialComponent = componentClass({injectedContext, contextObserver, key: @filteredValue})
       @descriptor = [partialComponent]
       if async
         contextObserver.forceUpdate()
@@ -354,6 +366,24 @@ class Batman.DOM.React.ShowIfBinding extends Batman.DOM.React.AbstractBinding
     else
       delete style.display # in the context of a foreach binding, it could inherit a failed test from the prototype node
     @safelySetProps({style})
+class Batman.DOM.React.StyleAttributeBinding extends Batman.DOM.React.AbstractBinding
+  applyBinding: ->
+    styleProp = @descriptor.props.style ||= {}
+    styleProp[@attrArg] = @filteredValue
+    @descriptor.props.style = styleProp
+    @descriptor
+
+  styleStringToObject: (str) ->
+    styles = {}
+    declarations = str.split(";")
+
+    for declaration in declarations when declaration # don't allow ""
+      [property, values...] = declaration.split(":") # allow values with `:` (thanks to batmanjs source)
+      value = values.join(":")
+      propertyName = Batman.helpers.camelize(property, true) # lowercase first letter
+      styles[propertyName] = value
+
+    styles
 # Batman.Controller::renderReact
 
 Batman.HTMLStore::onResolved = (path, callback) ->
@@ -362,13 +392,10 @@ Batman.HTMLStore::onResolved = (path, callback) ->
   else
     callback()
 
-
 @BatmanReactDebug = true
 @reactDebug = ->
   if BatmanReactDebug
     console.log(arguments...)
-
-
 
 Batman.reactComponentForRoutingKeyAndAction = (routingKey, action, callback) ->
   componentName = Batman.helpers.camelize("#{routingKey}_#{action}_component")
@@ -444,7 +471,6 @@ class Batman.ContextObserver extends Batman.Hash
     super({})
     @constructor.COUNT += 1
     @_logCount()
-    @_alreadyObserving = {}
     @_properties = []
     @forceUpdate = @_forceUpdate.bind(@)
     @on "changed", @forceUpdate
@@ -471,10 +497,17 @@ class Batman.ContextObserver extends Batman.Hash
     undefined
 
   observeProperty: (prop) ->
-    return if prop in @_properties
+    @_logProperties ||= Batman.setImmediate =>
+      if @DEAD
+        console.log("Observer was killed")
+      else
+        console.log("Now tracking #{@_properties.length} properties")
+      @_logProperties = false
+    return false if prop in @_properties
     @_properties.push(prop)
     prop.observe(@forceUpdate)
     prop.observe (nv, ov) -> reactDebug "forceUpdate because of #{prop.key} #{Batman.Filters.truncate(JSON.stringify(ov), 15)} -> #{Batman.Filters.truncate(JSON.stringify(nv), 15)}"
+    return true
 
   getContext: (keypath) ->
     base = @_baseForKeypath(keypath)
@@ -503,20 +536,23 @@ class Batman.ContextObserver extends Batman.Hash
     value
 
   die: ->
+    if @DEAD
+      console.warn("This context observer was already killed!")
+      return
+    @DEAD = true
     @constructor.COUNT -= 1
     @_logCount()
-    @forEach (keypathName, property) =>
-      # reactDebug "ContextObserver forgetting #{keypathName}"
+    for property in @_properties
       property?.forget(@forceUpdate)
-      @forget(keypathName)
-      @unset(keypathName)
+
+    @_properties = null
     @off()
 
   _logCount: ->
-    return if @_logging
-    @_logging = Batman.setImmediate =>
+    return if @constructor._logging
+    @constructor._logging = Batman.setImmediate =>
       console.log("#{@constructor.COUNT} ContextObservers")
-      @_logging = false
+      @constructor._logging = false
 
 Batman.DOM.reactReaders =
   bind: Batman.DOM.React.BindBinding
@@ -525,9 +561,8 @@ Batman.DOM.reactReaders =
   hideif: Batman.DOM.React.HideIfBinding
   partial: Batman.DOM.React.PartialBinding
   context: Batman.DOM.React.ContextBinding
-
+  debug: Batman.DOM.React.DebugBinding
   # TODO: add data-route-params
-  # context: (definition) ->
   # view: (definition) ->
   # contentfor: (definition) ->
   # yield: (definition) ->
@@ -550,7 +585,7 @@ Batman.DOM.reactAttrReaders =
   removeclass: Batman.DOM.React.RemoveClassBinding
   context: Batman.DOM.React.ContextAttributeBinding
   # track: (definition) ->
-  # style: (definition) ->
+  style: Batman.DOM.React.StyleAttributeBinding
 
   ## WONTFIX:
   formfor: Batman.DOM.React.ContextAttributeBinding
@@ -564,6 +599,11 @@ for tagName, tagFunc of React.DOM
       if classes = props?.class
         props.className = classes
         delete props.class
+
+      # style can be a string
+      if styles = props?.style
+        props.style = Batman.DOM.React.StyleAttributeBinding::styleStringToObject(styles)
+
       # bindBatmanDescriptor will add context
       descriptor = {
         type: tagName
@@ -576,23 +616,37 @@ for tagName, tagFunc of React.DOM
 
 Batman.ReactMixin =
   getInitialState: ->
+    reactDebug "getInitialState #{@constructor?.displayName || @props?.key}"
     @_observeContext()
     return {}
+
   willReceiveProps: (nextProps) ->
+    reactDebug "willReceiveProps #{@constructor?.displayName || @props?.key}", nextProps
     @_observeContext(nextProps)
 
   componentWillUnmount: ->
-    @_observer.die()
+    if @_observer.component is @ # don't let data-partials kill the main observer!
+      reactDebug "componentWillUnmount, killing observer"
+      @_observer.die()
 
   _observeContext: (props) ->
+    reactDebug "_observeContext", props
     props ||= @props
     if props.contextObserver
-      @_observer?.die()
-      @_observer = props.contextObserver
+      if @_observer? and @_observer isnt props.contextObserver
+        reactDebug "Killing observer because props.contextObserver was passed in"
+        @_observer?.die()
+      if !@_observer?
+        @_observer = props.contextObserver
     else
-      target = props.contextTarget || new Batman.Object
-      @_observer.die() if @_observer
-      @_observer = new Batman.ContextObserver(target: target, component: this)
+      target = props.contextTarget ||= new Batman.Object
+      if @_observer? && target isnt @_observer.target
+        reactDebug "Killing observer because new target passed in"
+        @_observer?.die()
+        @_observer = null
+      if !@_observer?
+        @props.contextTarget = target
+        @_observer = new Batman.ContextObserver(target: target, component: this)
 
   renderTree: ->
     tree = @renderBatman()

@@ -19,8 +19,7 @@ class Batman.DOM.React.ForEachBinding extends Batman.DOM.React.AbstractBinding
       key = _getKey(item)
       injectedContext = Batman.mixin({}, props.injectedContext)
       injectedContext[itemName] = item
-      newProps = Batman.mixin({key, injectedContext}, props)
-      console.log "ic", injectedContext
+      newProps = Batman.mixin({}, props, {key, injectedContext})
       descriptor = {
         type
         children: cloneDescriptor(children)

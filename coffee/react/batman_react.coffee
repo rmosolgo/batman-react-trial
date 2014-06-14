@@ -6,13 +6,10 @@ Batman.HTMLStore::onResolved = (path, callback) ->
   else
     callback()
 
-
 @BatmanReactDebug = true
 @reactDebug = ->
   if BatmanReactDebug
     console.log(arguments...)
-
-
 
 Batman.reactComponentForRoutingKeyAndAction = (routingKey, action, callback) ->
   componentName = Batman.helpers.camelize("#{routingKey}_#{action}_component")

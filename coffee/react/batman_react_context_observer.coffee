@@ -4,7 +4,6 @@ class Batman.ContextObserver extends Batman.Hash
     super({})
     @constructor.COUNT += 1
     @_logCount()
-    @_alreadyObserving = {}
     @_properties = []
     @forceUpdate = @_forceUpdate.bind(@)
     @on "changed", @forceUpdate
@@ -31,10 +30,17 @@ class Batman.ContextObserver extends Batman.Hash
     undefined
 
   observeProperty: (prop) ->
-    return if prop in @_properties
+    @_logProperties ||= Batman.setImmediate =>
+      if @DEAD
+        console.log("Observer was killed")
+      else
+        console.log("Now tracking #{@_properties.length} properties")
+      @_logProperties = false
+    return false if prop in @_properties
     @_properties.push(prop)
     prop.observe(@forceUpdate)
     prop.observe (nv, ov) -> reactDebug "forceUpdate because of #{prop.key} #{Batman.Filters.truncate(JSON.stringify(ov), 15)} -> #{Batman.Filters.truncate(JSON.stringify(nv), 15)}"
+    return true
 
   getContext: (keypath) ->
     base = @_baseForKeypath(keypath)
@@ -63,17 +69,20 @@ class Batman.ContextObserver extends Batman.Hash
     value
 
   die: ->
+    if @DEAD
+      console.warn("This context observer was already killed!")
+      return
+    @DEAD = true
     @constructor.COUNT -= 1
     @_logCount()
-    @forEach (keypathName, property) =>
-      # reactDebug "ContextObserver forgetting #{keypathName}"
+    for property in @_properties
       property?.forget(@forceUpdate)
-      @forget(keypathName)
-      @unset(keypathName)
+
+    @_properties = null
     @off()
 
   _logCount: ->
-    return if @_logging
-    @_logging = Batman.setImmediate =>
+    return if @constructor._logging
+    @constructor._logging = Batman.setImmediate =>
       console.log("#{@constructor.COUNT} ContextObservers")
-      @_logging = false
+      @constructor._logging = false

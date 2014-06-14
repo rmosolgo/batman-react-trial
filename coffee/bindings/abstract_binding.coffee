@@ -76,7 +76,13 @@ class Batman.DOM.React.AbstractBinding
     firstPart = parts.shift()
     if obj = @descriptor.props.injectedContext[firstPart]
       if parts.length
-        hit = obj.get(parts.join("."))
+        path = parts.join(".")
+        hit = obj.get(path)
+        # HACK: how can I make contextObserver more self-sufficient?
+        # would be great to somehow coopt built-in source tracking
+        prop = obj.property(path)
+        if @descriptor.contextObserver.observeProperty(prop)
+          console.log("observing #{path} on #{firstPart}")
       else
         hit = obj
       return [true, hit]
@@ -84,6 +90,9 @@ class Batman.DOM.React.AbstractBinding
       for obj in @descriptor.props.injectedContext._injectedObjects
         if obj.get(firstPart)?
           hit = obj.get(keypath)
+          # HACK: See above
+          prop = obj.property(keypath)
+          @descriptor.contextObserver.observeProperty(prop)
           return [true, hit]
     else
       return [false, undefined]

@@ -27,21 +27,4 @@
     </div>
   </li>
 </ul>
-<p class="row">
-  <div class="well">
-    <form data-formfor-animal='newAnimal' data-event-submit="save | withArguments newAnimal">
-      <ul class='list-unstyled'>
-        <li class='alert alert-danger' data-foreach-error='newAnimal.errors' data-bind='error.fullMessage'></li>
-      </ul>
-      <div class="form-group">
-        <label>New Animal:</label>
-        <input type="text" class="form-control" data-bind='newAnimal.name'/>
-      </div>
-      <p>
-        Make a new animal:
-        <span data-bind="Animal.NAMES | join ', ' | prepend ' ' "></span>
-      </p>
-      <input type="submit" value="Save" class="btn btn-primary"/>
-    </form>
-  </div>
-</p>
+<div data-partial='"animals/new_form"'></div>
