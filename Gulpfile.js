@@ -6,7 +6,7 @@ var batmanTemplates = require("gulp-batman-templates");
 
 
 gulp.task('default', ['server'], function(){
-  gulp.watch('./**/*', ["build", "build_html", "finalize"])
+  gulp.watch(['./**/*.coffee', './**/*.html'], ["build", "build_html", "finalize"])
 });
 
 var appSources = ["./coffee/bindings/*.coffee","./coffee/react/*.coffee", "./coffee/*.coffee"]
@@ -40,8 +40,20 @@ gulp.task("build_html", function(){
 
 // gulp.task("cjsx", shell.task(["cjsx -cbw -o build/ cjsx/"]))
 
+// HARPJS DEVELOPMENT SERVER
+var nodePath = require("path")
+var harp = require("harp")
+var pkgv = require("./node_modules/harp/package.json").version
+var HARP_PORT = 9000
+
+var startHarp = function(port){
+  var path = nodePath.resolve(process.cwd())
+  harp.server(path, {port: port}, function(){
+    console.log(" Harp v" + pkgv + " running on http://localhost:" + port)
+  })
+}
+
 gulp.task("server", function(){
-  gulp.src("")
-    .pipe(shell(["harp server"]))
-  return true
+  startHarp(HARP_PORT)
+  true
 })
