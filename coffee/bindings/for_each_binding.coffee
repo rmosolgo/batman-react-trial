@@ -4,37 +4,30 @@ class Batman.DOM.React.ForEachBinding extends Batman.DOM.React.AbstractBinding
     itemName = @attrArg
     collectionName = @keypath
     collection = @filteredValue
-    {type, children, props} = @descriptor
+    {type, children, props, contextObserver} = @descriptor
     forEachProp = {}
     forEachProp["data-foreach-#{itemName}"] = true
     Batman.unmixin(props, forEachProp)
 
     displayName = Batman.helpers.camelize("enumerate_" + itemName + "_in_" + collectionName.split(".")[0])
-
-    # only pass base objects to the child so that nested keypaths will be looked up against it
-    baseContext = @descriptor.contextObserver.get('baseContext')
-    delete baseContext[itemName]
-
-    component = @descriptor.contextObserver.component
+    component = contextObserver.component
 
     if collection?.toArray
       collection = @lookupKeypath("#{@keypath}.toArray")
 
     list = for item in collection
-      innerContext = Batman.extend({}, baseContext)
       key = _getKey(item)
-      innerContext[itemName] = item
-      # TODO: How can i not instantiate batman objects here??
-      contextTarget = new Batman.Object(innerContext)
-      contextObserver = new Batman.ContextObserver(target: contextTarget, component: component)
-      newProps = Batman.mixin({item, key}, props)
+      injectedContext = Batman.mixin({}, props.injectedContext)
+      injectedContext[itemName] = item
+      newProps = Batman.mixin({key, injectedContext}, props)
+      console.log "ic", injectedContext
       descriptor = {
         type
         children: cloneDescriptor(children)
         props: newProps
         contextObserver
       }
-      # reactDebug "#{type} for #{itemName} #{item.get('name')} => #{JSON.stringify(newProps)} #{contextObserver.get('_batmanID')}", descriptor
+      # reactDebug "#{type} for #{itemName} #{item?.get?('name')} => #{JSON.stringify(newProps)} #{contextObserver.get('_batmanID')}", descriptor
       bindBatmanDescriptor(descriptor)
     list
 

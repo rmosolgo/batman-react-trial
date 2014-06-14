@@ -3,11 +3,12 @@ Batman.DOM.reactReaders =
   route: Batman.DOM.React.RouteBinding
   showif: Batman.DOM.React.ShowIfBinding
   hideif: Batman.DOM.React.HideIfBinding
+  partial: Batman.DOM.React.PartialBinding
+  context: Batman.DOM.React.ContextBinding
 
   # TODO: add data-route-params
   # context: (definition) ->
   # view: (definition) ->
-  # partial: (definition) ->
   # contentfor: (definition) ->
   # yield: (definition) ->
 

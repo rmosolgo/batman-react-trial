@@ -1,9 +1,13 @@
 class Batman.ContextObserver extends Batman.Hash
+  @COUNT = 0
   constructor: ({@component, @target}) ->
-      super({})
-      @_alreadyObserving = {}
-      @forceUpdate = @_forceUpdate.bind(@)
-      @on "changed", @forceUpdate
+    super({})
+    @constructor.COUNT += 1
+    @_logCount()
+    @_alreadyObserving = {}
+    @_properties = []
+    @forceUpdate = @_forceUpdate.bind(@)
+    @on "changed", @forceUpdate
 
   _targets: ->
     @_targetArray ||= if @component?.props?.controller
@@ -26,23 +30,19 @@ class Batman.ContextObserver extends Batman.Hash
           return target
     undefined
 
-  _observeKeypath: (keypath) ->
-    return if @_alreadyObserving[keypath]
-    @_alreadyObserving[keypath] = true
-    base = @_baseForKeypath(keypath)
-    prop = base.property(keypath)
-    @set(keypath, prop)
+  observeProperty: (prop) ->
+    return if prop in @_properties
+    @_properties.push(prop)
     prop.observe(@forceUpdate)
-    # reactDebug("Observing #{prop.key} on", prop.base)
     prop.observe (nv, ov) -> reactDebug "forceUpdate because of #{prop.key} #{Batman.Filters.truncate(JSON.stringify(ov), 15)} -> #{Batman.Filters.truncate(JSON.stringify(nv), 15)}"
 
   getContext: (keypath) ->
     base = @_baseForKeypath(keypath)
     if !base
-      console.warn("Nothing found for #{keypath}")
+      # console.warn("Nothing found for #{keypath}")
       return
     prop = Batman.Property.forBaseAndKey(base, keypath)
-    @_observeKeypath(keypath) if prop?
+    @observeProperty(prop) if prop?
 
     value = prop?.getValue()
     # for example, if you look up a function relative to currentApp, `this` is gonna get all messed up when you call it again.
@@ -56,28 +56,24 @@ class Batman.ContextObserver extends Batman.Hash
     if base?
       Batman.Property.forBaseAndKey(base, keypath)?.setValue(value)
     else if typeof value isnt "undefined"
-      @target.set(keypath, value)
-      @_observeKeypath(keypath)
-
-  @accessor 'context', ->
-    ctx = {}
-    @forEach (key, value) =>
-      ctx[key] = @getContext(key)
-    ctx
-
-  @accessor 'baseContext', ->
-    ctx = {}
-    @forEach (key, value) =>
-      baseKey = key.split(".")[0]
-      if !ctx[baseKey]
-        # reactDebug "Adding #{baseKey} to baseContext (#{itemName})"
-        ctx[baseKey] = @getContext(baseKey)
-    ctx
+      base = @target
+      base.set(keypath, value)
+    prop = Batman.Property.forBaseAndKey(base, keypath)
+    @observeProperty(prop)
+    value
 
   die: ->
+    @constructor.COUNT -= 1
+    @_logCount()
     @forEach (keypathName, property) =>
       # reactDebug "ContextObserver forgetting #{keypathName}"
       property?.forget(@forceUpdate)
       @forget(keypathName)
       @unset(keypathName)
     @off()
+
+  _logCount: ->
+    return if @_logging
+    @_logging = Batman.setImmediate =>
+      console.log("#{@constructor.COUNT} ContextObservers")
+      @_logging = false

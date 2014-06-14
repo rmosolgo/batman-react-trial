@@ -11,10 +11,13 @@ Batman.ReactMixin =
 
   _observeContext: (props) ->
     props ||= @props
-    target = props.contextTarget || new Batman.Object
-    reactDebug "observing contextTarget", target
-    @_observer.die() if @_observer
-    @_observer = new Batman.ContextObserver(target: target, component: this)
+    if props.contextObserver
+      @_observer?.die()
+      @_observer = props.contextObserver
+    else
+      target = props.contextTarget || new Batman.Object
+      @_observer.die() if @_observer
+      @_observer = new Batman.ContextObserver(target: target, component: this)
 
   renderTree: ->
     tree = @renderBatman()
@@ -51,6 +54,9 @@ bindBatmanDescriptor = (descriptor = {}) ->
   if descriptor?.type
     {type, props, children} = descriptor
     newChildren = for child in children
+      if descriptor.props?.injectedContext && child.type
+        child.props ||= {}
+        child.props.injectedContext = descriptor.props.injectedContext
       child.contextObserver ?= descriptor.contextObserver
       bindBatmanDescriptor(child)
     React.DOM[type](props, newChildren...)

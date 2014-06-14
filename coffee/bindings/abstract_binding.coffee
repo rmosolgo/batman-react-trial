@@ -63,7 +63,30 @@ class Batman.DOM.React.AbstractBinding
       @value
 
   lookupKeypath: (keypath) ->
-    @descriptor.contextObserver.getContext(keypath)
+    [keypathWasFound, injectedValue] = @_lookupInjectedKeypath(keypath)
+    if keypathWasFound
+      injectedValue
+    else
+      @descriptor?.contextObserver?.getContext(keypath)
+
+  _lookupInjectedKeypath: (keypath) ->
+    # returns [keypathWasFound, injectedValue], so keypath could be found and value could be undefined!
+    return [false, undefined] unless @descriptor.props.injectedContext?
+    parts = keypath.split(".")
+    firstPart = parts.shift()
+    if obj = @descriptor.props.injectedContext[firstPart]
+      if parts.length
+        hit = obj.get(parts.join("."))
+      else
+        hit = obj
+      return [true, hit]
+    else if @descriptor.props.injectedContext._injectedObjects?.length
+      for obj in @descriptor.props.injectedContext._injectedObjects
+        if obj.get(firstPart)?
+          hit = obj.get(keypath)
+          return [true, hit]
+    else
+      return [false, undefined]
 
   constructor: (@descriptor, @bindingName, @keypath, @attrArg) ->
     @tagName =  @descriptor.type

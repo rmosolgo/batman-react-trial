@@ -12,22 +12,28 @@ Batman.HTMLStore::onResolved = (path, callback) ->
   if BatmanReactDebug
     console.log(arguments...)
 
-reactComponentForRoutingKeyAndAction = (routingKey, action, callback) ->
+
+
+Batman.reactComponentForRoutingKeyAndAction = (routingKey, action, callback) ->
   componentName = Batman.helpers.camelize("#{routingKey}_#{action}_component")
   componentClass = Batman.currentApp[componentName]
   if !componentClass
     HTMLPath = "#{routingKey}/#{action}"
-    Batman.View.store.onResolved HTMLPath, =>
-      html = Batman.View.store.get(HTMLPath)
-      wrappedHTML = "/** @jsx Batman.DOM */\n<div>#{html}</div>"
-      reactCode = JSXTransformer.transform(wrappedHTML).code
-      displayName = componentName
-      renderBatman = -> eval(reactCode)
-      componentClass = Batman.createComponent({displayName, renderBatman})
+    Batman.reactComponentForHTMLPath HTMLPath, (componentClass) ->
+      componentClass.displayName = componentName
       Batman.currentApp[componentName] = componentClass
       console.log("Defined React Component: #{componentName}")
       callback(componentClass)
   else
+    callback(componentClass)
+
+Batman.reactComponentForHTMLPath = (HTMLPath, callback) ->
+  Batman.View.store.onResolved HTMLPath, =>
+    html = Batman.View.store.get(HTMLPath)
+    wrappedHTML = "/** @jsx Batman.DOM */\n<div>#{html}</div>"
+    reactCode = JSXTransformer.transform(wrappedHTML).code
+    renderBatman = -> eval(reactCode)
+    componentClass = Batman.createComponent({renderBatman})
     callback(componentClass)
 
 Batman.Controller::renderReact = (options={}) ->
@@ -46,7 +52,7 @@ Batman.Controller::renderReact = (options={}) ->
   options.componentClass = Batman.currentApp[options.componentName]
 
   # TODO: Support components with defined functions etc, but have their render functions provided by Batman.React
-  reactComponentForRoutingKeyAndAction @get('routingKey'), options.action, (componentClass) =>
+  Batman.reactComponentForRoutingKeyAndAction @get('routingKey'), options.action, (componentClass) =>
     options.componentClass = componentClass
     @finishRenderReact(options)
 

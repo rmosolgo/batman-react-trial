@@ -13,7 +13,7 @@ class Batman.DOM.React.BindBinding extends Batman.DOM.React.AbstractBinding
             if @filteredValue? and @filteredValue is @descriptor.props.value
               {checked: true}
             else
-              {}
+              {checked: false}
           else
             {value: @filteredValue}
         newProps.onChange = @updateKeypath()
@@ -33,10 +33,9 @@ class Batman.DOM.React.BindBinding extends Batman.DOM.React.AbstractBinding
 
 
   updateKeypath: (keypath=@keypath) ->
-    observer = @descriptor.contextObserver
     (e) =>
       value = switch e.target.type.toUpperCase()
         when "CHECKBOX" then e.target.checked
         else e.target.value
       reactDebug "updating " + keypath + " to: ", value
-      observer.setContext(keypath, value)
+      @descriptor.contextObserver.setContext(keypath, value)

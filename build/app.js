@@ -1,7 +1,8 @@
 (function() {
-  var bindBatmanDescriptor, cloneDescriptor, reactComponentForRoutingKeyAndAction, tagFunc, tagName, _base, _fn, _ref,
+  var bindBatmanDescriptor, cloneDescriptor, tagFunc, tagName, _base, _fn, _ref,
     __hasProp = {}.hasOwnProperty,
     __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
+    __indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; },
     __slice = [].slice;
 
   (_base = Batman.DOM).React || (_base.React = {});
@@ -55,7 +56,41 @@
     };
 
     AbstractBinding.prototype.lookupKeypath = function(keypath) {
-      return this.descriptor.contextObserver.getContext(keypath);
+      var injectedValue, keypathWasFound, _ref, _ref1, _ref2;
+      _ref = this._lookupInjectedKeypath(keypath), keypathWasFound = _ref[0], injectedValue = _ref[1];
+      if (keypathWasFound) {
+        return injectedValue;
+      } else {
+        return (_ref1 = this.descriptor) != null ? (_ref2 = _ref1.contextObserver) != null ? _ref2.getContext(keypath) : void 0 : void 0;
+      }
+    };
+
+    AbstractBinding.prototype._lookupInjectedKeypath = function(keypath) {
+      var firstPart, hit, obj, parts, _i, _len, _ref, _ref1;
+      if (this.descriptor.props.injectedContext == null) {
+        return [false, void 0];
+      }
+      parts = keypath.split(".");
+      firstPart = parts.shift();
+      if (obj = this.descriptor.props.injectedContext[firstPart]) {
+        if (parts.length) {
+          hit = obj.get(parts.join("."));
+        } else {
+          hit = obj;
+        }
+        return [true, hit];
+      } else if ((_ref = this.descriptor.props.injectedContext._injectedObjects) != null ? _ref.length : void 0) {
+        _ref1 = this.descriptor.props.injectedContext._injectedObjects;
+        for (_i = 0, _len = _ref1.length; _i < _len; _i++) {
+          obj = _ref1[_i];
+          if (obj.get(firstPart) != null) {
+            hit = obj.get(keypath);
+            return [true, hit];
+          }
+        }
+      } else {
+        return [false, void 0];
+      }
     };
 
     function AbstractBinding(descriptor, bindingName, keypath, attrArg) {
@@ -201,7 +236,9 @@
                     checked: true
                   };
                 } else {
-                  return {};
+                  return {
+                    checked: false
+                  };
                 }
                 break;
               default:
@@ -229,11 +266,9 @@
     };
 
     BindBinding.prototype.updateKeypath = function(keypath) {
-      var observer;
       if (keypath == null) {
         keypath = this.keypath;
       }
-      observer = this.descriptor.contextObserver;
       return (function(_this) {
         return function(e) {
           var value;
@@ -246,7 +281,7 @@
             }
           })();
           reactDebug("updating " + keypath + " to: ", value);
-          return observer.setContext(keypath, value);
+          return _this.descriptor.contextObserver.setContext(keypath, value);
         };
       })(this);
     };
@@ -263,11 +298,32 @@
     }
 
     ContextAttributeBinding.prototype.applyBinding = function() {
-      this.descriptor.contextObserver.setContext(this.attrArg, this.filteredValue || null);
+      var _base1;
+      (_base1 = this.descriptor.props).injectedContext || (_base1.injectedContext = {});
+      this.descriptor.props.injectedContext[this.attrArg] = this.filteredValue;
       return this.descriptor;
     };
 
     return ContextAttributeBinding;
+
+  })(Batman.DOM.React.AbstractBinding);
+
+  Batman.DOM.React.ContextBinding = (function(_super) {
+    __extends(ContextBinding, _super);
+
+    function ContextBinding() {
+      return ContextBinding.__super__.constructor.apply(this, arguments);
+    }
+
+    ContextBinding.prototype.applyBinding = function() {
+      var _base1, _base2;
+      (_base1 = this.descriptor.props).injectedContext || (_base1.injectedContext = {});
+      (_base2 = this.descriptor.props.injectedContext)._injectedObjects || (_base2._injectedObjects = []);
+      this.descriptor.props.injectedContext._injectedObjects.push(this.filteredValue);
+      return this.descriptor;
+    };
+
+    return ContextBinding;
 
   })(Batman.DOM.React.AbstractBinding);
 
@@ -282,10 +338,12 @@
       var eventHandlers, handler;
       handler = this.filteredValue;
       eventHandlers = {};
-      eventHandlers["on" + (Batman.helpers.camelize(this.attrArg))] = function(e) {
-        e.preventDefault();
-        return handler.apply(this, arguments);
-      };
+      eventHandlers["on" + (Batman.helpers.camelize(this.attrArg))] = (function(_this) {
+        return function(e) {
+          e.preventDefault();
+          return handler.apply(_this, arguments);
+        };
+      })(this);
       this.safelySetProps(eventHandlers);
       return this.descriptor;
     };
@@ -302,19 +360,17 @@
     }
 
     ForEachBinding.prototype.applyBinding = function() {
-      var baseContext, children, collection, collectionName, component, contextObserver, contextTarget, descriptor, displayName, forEachProp, innerContext, item, itemName, key, list, newProps, props, type, _getKey, _ref;
+      var children, collection, collectionName, component, contextObserver, descriptor, displayName, forEachProp, injectedContext, item, itemName, key, list, newProps, props, type, _getKey, _ref;
       _getKey = this._getEnumerateKey;
       itemName = this.attrArg;
       collectionName = this.keypath;
       collection = this.filteredValue;
-      _ref = this.descriptor, type = _ref.type, children = _ref.children, props = _ref.props;
+      _ref = this.descriptor, type = _ref.type, children = _ref.children, props = _ref.props, contextObserver = _ref.contextObserver;
       forEachProp = {};
       forEachProp["data-foreach-" + itemName] = true;
       Batman.unmixin(props, forEachProp);
       displayName = Batman.helpers.camelize("enumerate_" + itemName + "_in_" + collectionName.split(".")[0]);
-      baseContext = this.descriptor.contextObserver.get('baseContext');
-      delete baseContext[itemName];
-      component = this.descriptor.contextObserver.component;
+      component = contextObserver.component;
       if (collection != null ? collection.toArray : void 0) {
         collection = this.lookupKeypath("" + this.keypath + ".toArray");
       }
@@ -323,18 +379,14 @@
         _results = [];
         for (_i = 0, _len = collection.length; _i < _len; _i++) {
           item = collection[_i];
-          innerContext = Batman.extend({}, baseContext);
           key = _getKey(item);
-          innerContext[itemName] = item;
-          contextTarget = new Batman.Object(innerContext);
-          contextObserver = new Batman.ContextObserver({
-            target: contextTarget,
-            component: component
-          });
+          injectedContext = Batman.mixin({}, props.injectedContext);
+          injectedContext[itemName] = item;
           newProps = Batman.mixin({
-            item: item,
-            key: key
+            key: key,
+            injectedContext: injectedContext
           }, props);
+          console.log("ic", injectedContext);
           descriptor = {
             type: type,
             children: cloneDescriptor(children),
@@ -420,6 +472,39 @@
     };
 
     return NotImplementedBinding;
+
+  })(Batman.DOM.React.AbstractBinding);
+
+  Batman.DOM.React.PartialBinding = (function(_super) {
+    __extends(PartialBinding, _super);
+
+    function PartialBinding() {
+      return PartialBinding.__super__.constructor.apply(this, arguments);
+    }
+
+    PartialBinding.prototype.applyBinding = function() {
+      var async, contextObserver;
+      contextObserver = this.descriptor.contextObserver;
+      async = false;
+      Batman.reactComponentForHTMLPath(this.filteredValue, (function(_this) {
+        return function(componentClass) {
+          var injectedContext, partialComponent;
+          injectedContext = _this.descriptor.props.injectedContext;
+          partialComponent = componentClass({
+            injectedContext: injectedContext,
+            contextObserver: contextObserver
+          });
+          _this.descriptor = [partialComponent];
+          if (async) {
+            return contextObserver.forceUpdate();
+          }
+        };
+      })(this));
+      async = true;
+      return this.descriptor;
+    };
+
+    return PartialBinding;
 
   })(Batman.DOM.React.AbstractBinding);
 
@@ -519,34 +604,39 @@
     }
   };
 
-  reactComponentForRoutingKeyAndAction = function(routingKey, action, callback) {
+  Batman.reactComponentForRoutingKeyAndAction = function(routingKey, action, callback) {
     var HTMLPath, componentClass, componentName;
     componentName = Batman.helpers.camelize("" + routingKey + "_" + action + "_component");
     componentClass = Batman.currentApp[componentName];
     if (!componentClass) {
       HTMLPath = "" + routingKey + "/" + action;
-      return Batman.View.store.onResolved(HTMLPath, (function(_this) {
-        return function() {
-          var displayName, html, reactCode, renderBatman, wrappedHTML;
-          html = Batman.View.store.get(HTMLPath);
-          wrappedHTML = "/** @jsx Batman.DOM */\n<div>" + html + "</div>";
-          reactCode = JSXTransformer.transform(wrappedHTML).code;
-          displayName = componentName;
-          renderBatman = function() {
-            return eval(reactCode);
-          };
-          componentClass = Batman.createComponent({
-            displayName: displayName,
-            renderBatman: renderBatman
-          });
-          Batman.currentApp[componentName] = componentClass;
-          console.log("Defined React Component: " + componentName);
-          return callback(componentClass);
-        };
-      })(this));
+      return Batman.reactComponentForHTMLPath(HTMLPath, function(componentClass) {
+        componentClass.displayName = componentName;
+        Batman.currentApp[componentName] = componentClass;
+        console.log("Defined React Component: " + componentName);
+        return callback(componentClass);
+      });
     } else {
       return callback(componentClass);
     }
+  };
+
+  Batman.reactComponentForHTMLPath = function(HTMLPath, callback) {
+    return Batman.View.store.onResolved(HTMLPath, (function(_this) {
+      return function() {
+        var componentClass, html, reactCode, renderBatman, wrappedHTML;
+        html = Batman.View.store.get(HTMLPath);
+        wrappedHTML = "/** @jsx Batman.DOM */\n<div>" + html + "</div>";
+        reactCode = JSXTransformer.transform(wrappedHTML).code;
+        renderBatman = function() {
+          return eval(reactCode);
+        };
+        componentClass = Batman.createComponent({
+          renderBatman: renderBatman
+        });
+        return callback(componentClass);
+      };
+    })(this));
   };
 
   Batman.Controller.prototype.renderReact = function(options) {
@@ -565,7 +655,7 @@
     options.action = (frame != null ? frame.action : void 0) || this.get('action');
     options.componentName = Batman.helpers.camelize("" + (this.get('routingKey')) + "_" + options.action + "_component");
     options.componentClass = Batman.currentApp[options.componentName];
-    return reactComponentForRoutingKeyAndAction(this.get('routingKey'), options.action, (function(_this) {
+    return Batman.reactComponentForRoutingKeyAndAction(this.get('routingKey'), options.action, (function(_this) {
       return function(componentClass) {
         options.componentClass = componentClass;
         return _this.finishRenderReact(options);
@@ -603,10 +693,15 @@
   Batman.ContextObserver = (function(_super) {
     __extends(ContextObserver, _super);
 
+    ContextObserver.COUNT = 0;
+
     function ContextObserver(_arg) {
       this.component = _arg.component, this.target = _arg.target;
       ContextObserver.__super__.constructor.call(this, {});
+      this.constructor.COUNT += 1;
+      this._logCount();
       this._alreadyObserving = {};
+      this._properties = [];
       this.forceUpdate = this._forceUpdate.bind(this);
       this.on("changed", this.forceUpdate);
     }
@@ -642,15 +737,11 @@
       return void 0;
     };
 
-    ContextObserver.prototype._observeKeypath = function(keypath) {
-      var base, prop;
-      if (this._alreadyObserving[keypath]) {
+    ContextObserver.prototype.observeProperty = function(prop) {
+      if (__indexOf.call(this._properties, prop) >= 0) {
         return;
       }
-      this._alreadyObserving[keypath] = true;
-      base = this._baseForKeypath(keypath);
-      prop = base.property(keypath);
-      this.set(keypath, prop);
+      this._properties.push(prop);
       prop.observe(this.forceUpdate);
       return prop.observe(function(nv, ov) {
         return reactDebug("forceUpdate because of " + prop.key + " " + (Batman.Filters.truncate(JSON.stringify(ov), 15)) + " -> " + (Batman.Filters.truncate(JSON.stringify(nv), 15)));
@@ -661,12 +752,11 @@
       var base, prop, terminal, value;
       base = this._baseForKeypath(keypath);
       if (!base) {
-        console.warn("Nothing found for " + keypath);
         return;
       }
       prop = Batman.Property.forBaseAndKey(base, keypath);
       if (prop != null) {
-        this._observeKeypath(keypath);
+        this.observeProperty(prop);
       }
       value = prop != null ? prop.getValue() : void 0;
       if (Batman.typeOf(value) === "Function") {
@@ -677,43 +767,24 @@
     };
 
     ContextObserver.prototype.setContext = function(keypath, value) {
-      var base, _ref;
+      var base, prop, _ref;
       base = this._baseForKeypath(keypath);
       if (base != null) {
-        return (_ref = Batman.Property.forBaseAndKey(base, keypath)) != null ? _ref.setValue(value) : void 0;
+        if ((_ref = Batman.Property.forBaseAndKey(base, keypath)) != null) {
+          _ref.setValue(value);
+        }
       } else if (typeof value !== "undefined") {
-        this.target.set(keypath, value);
-        return this._observeKeypath(keypath);
+        base = this.target;
+        base.set(keypath, value);
       }
+      prop = Batman.Property.forBaseAndKey(base, keypath);
+      this.observeProperty(prop);
+      return value;
     };
 
-    ContextObserver.accessor('context', function() {
-      var ctx;
-      ctx = {};
-      this.forEach((function(_this) {
-        return function(key, value) {
-          return ctx[key] = _this.getContext(key);
-        };
-      })(this));
-      return ctx;
-    });
-
-    ContextObserver.accessor('baseContext', function() {
-      var ctx;
-      ctx = {};
-      this.forEach((function(_this) {
-        return function(key, value) {
-          var baseKey;
-          baseKey = key.split(".")[0];
-          if (!ctx[baseKey]) {
-            return ctx[baseKey] = _this.getContext(baseKey);
-          }
-        };
-      })(this));
-      return ctx;
-    });
-
     ContextObserver.prototype.die = function() {
+      this.constructor.COUNT -= 1;
+      this._logCount();
       this.forEach((function(_this) {
         return function(keypathName, property) {
           if (property != null) {
@@ -726,6 +797,18 @@
       return this.off();
     };
 
+    ContextObserver.prototype._logCount = function() {
+      if (this._logging) {
+        return;
+      }
+      return this._logging = Batman.setImmediate((function(_this) {
+        return function() {
+          console.log("" + _this.constructor.COUNT + " ContextObservers");
+          return _this._logging = false;
+        };
+      })(this));
+    };
+
     return ContextObserver;
 
   })(Batman.Hash);
@@ -735,6 +818,8 @@
     route: Batman.DOM.React.RouteBinding,
     showif: Batman.DOM.React.ShowIfBinding,
     hideif: Batman.DOM.React.HideIfBinding,
+    partial: Batman.DOM.React.PartialBinding,
+    context: Batman.DOM.React.ContextBinding,
     target: Batman.DOM.React.BindBinding,
     source: Batman.DOM.React.BindBinding,
     defineview: Batman.DOM.React.NotImplementedBinding,
@@ -788,17 +873,23 @@
       return this._observer.die();
     },
     _observeContext: function(props) {
-      var target;
+      var target, _ref1;
       props || (props = this.props);
-      target = props.contextTarget || new Batman.Object;
-      reactDebug("observing contextTarget", target);
-      if (this._observer) {
-        this._observer.die();
+      if (props.contextObserver) {
+        if ((_ref1 = this._observer) != null) {
+          _ref1.die();
+        }
+        return this._observer = props.contextObserver;
+      } else {
+        target = props.contextTarget || new Batman.Object;
+        if (this._observer) {
+          this._observer.die();
+        }
+        return this._observer = new Batman.ContextObserver({
+          target: target,
+          component: this
+        });
       }
-      return this._observer = new Batman.ContextObserver({
-        target: target,
-        component: this
-      });
     },
     renderTree: function() {
       var components, tree;
@@ -848,10 +939,14 @@
     if (descriptor != null ? descriptor.type : void 0) {
       type = descriptor.type, props = descriptor.props, children = descriptor.children;
       newChildren = (function() {
-        var _i, _len, _results;
+        var _i, _len, _ref2, _results;
         _results = [];
         for (_i = 0, _len = children.length; _i < _len; _i++) {
           child = children[_i];
+          if (((_ref2 = descriptor.props) != null ? _ref2.injectedContext : void 0) && child.type) {
+            child.props || (child.props = {});
+            child.props.injectedContext = descriptor.props.injectedContext;
+          }
           if (child.contextObserver == null) {
             child.contextObserver = descriptor.contextObserver;
           }
