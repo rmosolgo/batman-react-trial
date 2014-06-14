@@ -95,6 +95,7 @@
             return [true, hit];
           }
         }
+        return [false, void 0];
       } else {
         return [false, void 0];
       }
@@ -505,20 +506,27 @@
     }
 
     PartialBinding.prototype.applyBinding = function() {
-      var async, contextObserver;
-      contextObserver = this.descriptor.contextObserver;
+      var async, contextObserver, type, _ref;
+      _ref = this.descriptor, type = _ref.type, contextObserver = _ref.contextObserver;
       async = false;
       Batman.reactComponentForHTMLPath(this.filteredValue, (function(_this) {
         return function(componentClass) {
-          var injectedContext, partialComponent;
+          var childProps, children, injectedContext, partialDescriptor;
           injectedContext = _this.descriptor.props.injectedContext;
-          partialComponent = componentClass({
+          childProps = {
             injectedContext: injectedContext,
-            contextObserver: contextObserver,
             key: _this.filteredValue
-          });
-          _this.descriptor = [partialComponent];
+          };
+          children = [componentClass(childProps).renderBatman()];
+          partialDescriptor = {
+            type: type,
+            props: {},
+            children: children,
+            contextObserver: contextObserver
+          };
+          _this.descriptor = partialDescriptor;
           if (async) {
+            reactDebug("data-partial async " + _this.filteredValue);
             return contextObserver.forceUpdate();
           }
         };
@@ -1035,7 +1043,7 @@
         }
       }
     }
-    if (descriptor != null ? descriptor.type : void 0) {
+    if (descriptor != null ? descriptor.children : void 0) {
       type = descriptor.type, props = descriptor.props, children = descriptor.children;
       newChildren = (function() {
         var _i, _len, _ref2, _results;
@@ -1235,7 +1243,7 @@
 
     Animal.resourceName = 'animal';
 
-    Animal.NAMES = ["Echidna", "Snail", "Shark", "Starfish", "Parakeet", "Clam", "Dolphin", "Gorilla", "Elephant", "Spider"];
+    Animal.NAMES = ["Echidna", "Snail", "Shark", "Starfish", "Parakeet", "Clam", "Dolphin", "Gorilla", "Bat", "Spider", "Tyrannosaurus Rex"];
 
     Animal.COLORS = ["red", "green", "blue", "brown", "black", "yellow", "gray", "orange"].sort();
 
@@ -1253,6 +1261,10 @@
 
     Animal.accessor('toString', function() {
       return "" + (this.get('name')) + " " + (this.get('animalClass'));
+    });
+
+    Animal.accessor('fontSize', function() {
+      return this.get('name.length') * 2;
     });
 
     return Animal;

@@ -6,6 +6,7 @@ Batman.DOM.reactReaders =
   partial: Batman.DOM.React.PartialBinding
   context: Batman.DOM.React.ContextBinding
   debug: Batman.DOM.React.DebugBinding
+
   # TODO: add data-route-params
   # view: (definition) ->
   # contentfor: (definition) ->

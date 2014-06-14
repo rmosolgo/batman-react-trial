@@ -94,8 +94,9 @@ class Batman.DOM.React.AbstractBinding
           prop = obj.property(keypath)
           @descriptor.contextObserver.observeProperty(prop)
           return [true, hit]
+      return [false, undefined] # no match
     else
-      return [false, undefined]
+       return [false, undefined]
 
   constructor: (@descriptor, @bindingName, @keypath, @attrArg) ->
     @tagName =  @descriptor.type

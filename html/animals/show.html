@@ -1,6 +1,11 @@
 <div>
   <h1 data-bind='animal.name'></h1>
-  <p style='font-size: 1.5em;' data-style-font-weight='animal.name.length | append "00" '>This is just an example of routing.</p>
-  <a data-route='routes.animals' class='btn btn-primary'>Go back</a>
+  <p>I put this page here to test data-route bindings.</p>
+  <p style='font-weight: 800;' data-style-font-size='animal.fontSize' data-style-color='animal.color'>
+    This font-size is bound to <code>animal.name</code>.
+  </p>
   <div data-partial='"animals/detail"'></div>
+  <p>
+    <a data-route='routes.animals' class='btn btn-primary'>Go back</a>
+  </p>
 </div>

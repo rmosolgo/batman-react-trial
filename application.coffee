@@ -94,8 +94,9 @@ class Batman.DOM.React.AbstractBinding
           prop = obj.property(keypath)
           @descriptor.contextObserver.observeProperty(prop)
           return [true, hit]
+      return [false, undefined] # no match
     else
-      return [false, undefined]
+       return [false, undefined]
 
   constructor: (@descriptor, @bindingName, @keypath, @attrArg) ->
     @tagName =  @descriptor.type
@@ -323,13 +324,21 @@ class Batman.DOM.React.NotImplementedBinding extends Batman.DOM.React.AbstractBi
     @descriptor
 class Batman.DOM.React.PartialBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
-    contextObserver = @descriptor.contextObserver
+    {type, contextObserver} = @descriptor
     async = false
     Batman.reactComponentForHTMLPath @filteredValue, (componentClass) =>
       injectedContext = @descriptor.props.injectedContext
-      partialComponent = componentClass({injectedContext, contextObserver, key: @filteredValue})
-      @descriptor = [partialComponent]
+      childProps = {injectedContext, key: @filteredValue}
+      children = [componentClass(childProps).renderBatman()]
+      partialDescriptor = {
+        type
+        props: {}
+        children
+        contextObserver
+      }
+      @descriptor = partialDescriptor
       if async
+        reactDebug "data-partial async #{@filteredValue}"
         contextObserver.forceUpdate()
     async = true
     @descriptor
@@ -562,6 +571,7 @@ Batman.DOM.reactReaders =
   partial: Batman.DOM.React.PartialBinding
   context: Batman.DOM.React.ContextBinding
   debug: Batman.DOM.React.DebugBinding
+
   # TODO: add data-route-params
   # view: (definition) ->
   # contentfor: (definition) ->
@@ -680,7 +690,7 @@ bindBatmanDescriptor = (descriptor = {}) ->
       if bindingName is "foreach"
         break
 
-  if descriptor?.type
+  if descriptor?.children
     {type, props, children} = descriptor
     newChildren = for child in children
       if descriptor.props?.injectedContext && child.type
@@ -778,7 +788,7 @@ class App.AnimalsController extends App.ApplicationController
   destroy: (animal) -> animal.destroy()
 class App.Animal extends Batman.Model
   @resourceName: 'animal'
-  @NAMES: ["Echidna", "Snail", "Shark", "Starfish", "Parakeet", "Clam", "Dolphin", "Gorilla", "Elephant", "Spider"]
+  @NAMES: ["Echidna", "Snail", "Shark", "Starfish", "Parakeet", "Clam", "Dolphin", "Gorilla", "Bat", "Spider", "Tyrannosaurus Rex"]
   @COLORS: ["red", "green", "blue", "brown", "black", "yellow", "gray", "orange"].sort()
   @CLASSES: ["Mammal", "Fish", "Reptile", "Bird", "Amphibian", "Invertibrate"]
   @persist BatFire.Storage
@@ -786,3 +796,5 @@ class App.Animal extends Batman.Model
   @validate 'name', inclusion: { in: @NAMES }
 
   @accessor 'toString', -> "#{@get('name')} #{@get('animalClass')}"
+
+  @accessor 'fontSize', -> @get('name.length') * 2

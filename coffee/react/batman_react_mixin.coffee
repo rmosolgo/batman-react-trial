@@ -65,7 +65,7 @@ bindBatmanDescriptor = (descriptor = {}) ->
       if bindingName is "foreach"
         break
 
-  if descriptor?.type
+  if descriptor?.children
     {type, props, children} = descriptor
     newChildren = for child in children
       if descriptor.props?.injectedContext && child.type

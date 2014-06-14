@@ -1,12 +1,20 @@
 class Batman.DOM.React.PartialBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
-    contextObserver = @descriptor.contextObserver
+    {type, contextObserver} = @descriptor
     async = false
     Batman.reactComponentForHTMLPath @filteredValue, (componentClass) =>
       injectedContext = @descriptor.props.injectedContext
-      partialComponent = componentClass({injectedContext, contextObserver, key: @filteredValue})
-      @descriptor = [partialComponent]
+      childProps = {injectedContext, key: @filteredValue}
+      children = [componentClass(childProps).renderBatman()]
+      partialDescriptor = {
+        type
+        props: {}
+        children
+        contextObserver
+      }
+      @descriptor = partialDescriptor
       if async
+        reactDebug "data-partial async #{@filteredValue}"
         contextObserver.forceUpdate()
     async = true
     @descriptor
