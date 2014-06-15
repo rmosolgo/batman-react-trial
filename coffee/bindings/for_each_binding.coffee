@@ -1,34 +1,32 @@
 class Batman.DOM.React.ForEachBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
     _getKey = @_getEnumerateKey
+    _removeBinding = @_removeForEachBinding.bind(@)
     itemName = @attrArg
     collectionName = @keypath
     collection = @filteredValue
-    {type, children, props, contextObserver} = @descriptor
-    forEachProp = {}
-    forEachProp["data-foreach-#{itemName}"] = true
-    Batman.unmixin(props, forEachProp)
+    return [] if !collection
+    {type, children, props, context} = @descriptor
 
     displayName = Batman.helpers.camelize("enumerate_" + itemName + "_in_" + collectionName.split(".")[0])
-    component = contextObserver.component
 
     if collection?.toArray
-      collection = @lookupKeypath("#{@keypath}.toArray")
+      collection = collection.toArray()
 
-    list = for item in collection
+    newDescriptors = []
+    Batman.forEach collection, (item) ->
       key = _getKey(item)
-      injectedContext = Batman.mixin({}, props.injectedContext)
-      injectedContext[itemName] = item
-      newProps = Batman.mixin({}, props, {key, injectedContext})
-      descriptor = {
+      injectedContext = context.injectContext(itemName, item)
+      newProps = Batman.mixin({}, props, {key})
+      _removeBinding(newProps)
+      descriptor = new Batman.DOM.React.Descriptor({
         type
-        children: cloneDescriptor(children)
+        children: cloneDescriptor(children, injectedContext)
         props: newProps
-        contextObserver
-      }
-      # reactDebug "#{type} for #{itemName} #{item?.get?('name')} => #{JSON.stringify(newProps)} #{contextObserver.get('_batmanID')}", descriptor
-      bindBatmanDescriptor(descriptor)
-    list
+        context: injectedContext
+      })
+      newDescriptors.push(descriptor)
+    newDescriptors
 
   _getEnumerateKey: (item) ->
     if item.hashKey?
@@ -36,18 +34,21 @@ class Batman.DOM.React.ForEachBinding extends Batman.DOM.React.AbstractBinding
     else
       JSON.stringify(item)
 
+  _removeForEachBinding: (props) ->
+    forEachProp = {}
+    forEachProp["data-foreach-#{@attrArg}"] = true
+    Batman.unmixin(props, forEachProp)
+
 cloneDescriptor = (descriptor, ctx) ->
-  argType = Batman.typeOf(descriptor)
-  switch argType
-    when "Array"
-      (cloneDescriptor(item) for item in descriptor)
-    when "Object"
-      newDescriptor = {}
-      for key, value of descriptor
-        if key in ["contextObserver"]
-          continue
-        else
-          newDescriptor[key] = cloneDescriptor(value)
-      newDescriptor
-    else
-      descriptor
+  # console.log "cloning", descriptor
+  if descriptor instanceof Array
+    (cloneDescriptor(item) for item in descriptor)
+  else if descriptor instanceof Batman.DOM.React.Descriptor
+      newDescriptor = new Batman.DOM.React.Descriptor({
+        type: descriptor.type
+        props: Batman.mixin({}, descriptor.props)
+        children: cloneDescriptor(descriptor.children, ctx)
+        context: ctx
+      })
+  else
+    descriptor

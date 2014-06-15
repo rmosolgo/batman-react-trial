@@ -63,40 +63,7 @@ class Batman.DOM.React.AbstractBinding
       @value
 
   lookupKeypath: (keypath) ->
-    [keypathWasFound, injectedValue] = @_lookupInjectedKeypath(keypath)
-    if keypathWasFound
-      injectedValue
-    else
-      @descriptor?.contextObserver?.getContext(keypath)
-
-  _lookupInjectedKeypath: (keypath) ->
-    # returns [keypathWasFound, injectedValue], so keypath could be found and value could be undefined!
-    return [false, undefined] unless @descriptor.props.injectedContext?
-    parts = keypath.split(".")
-    firstPart = parts.shift()
-    if obj = @descriptor.props.injectedContext[firstPart]
-      if parts.length
-        path = parts.join(".")
-        hit = obj.get(path)
-        # HACK: how can I make contextObserver more self-sufficient?
-        # would be great to somehow coopt built-in source tracking
-        prop = obj.property(path)
-        if @descriptor.contextObserver.observeProperty(prop)
-          console.log("observing #{path} on #{firstPart}")
-      else
-        hit = obj
-      return [true, hit]
-    else if @descriptor.props.injectedContext._injectedObjects?.length
-      for obj in @descriptor.props.injectedContext._injectedObjects
-        if obj.get(firstPart)?
-          hit = obj.get(keypath)
-          # HACK: See above
-          prop = obj.property(keypath)
-          @descriptor.contextObserver.observeProperty(prop)
-          return [true, hit]
-      return [false, undefined] # no match
-    else
-       return [false, undefined]
+    @descriptor.context.get(keypath)
 
   constructor: (@descriptor, @bindingName, @keypath, @attrArg) ->
     @tagName =  @descriptor.type

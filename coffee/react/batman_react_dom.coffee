@@ -15,6 +15,7 @@ Batman.DOM.reactReaders =
   ## WONTFIX:
   target: Batman.DOM.React.BindBinding
   source: Batman.DOM.React.BindBinding
+
   ## WONT IMPLEMENT:
   defineview: Batman.DOM.React.NotImplementedBinding
   insertif: Batman.DOM.React.NotImplementedBinding
@@ -37,9 +38,9 @@ Batman.DOM.reactAttrReaders =
   source: Batman.DOM.React.BindAttributeBinding
 
 
-for tagName, tagFunc of React.DOM
-  do (tagName, tagFunc) ->
-    Batman.DOM[tagName] = (props, children...) ->
+for type, tagFunc of React.DOM
+  do (type, tagFunc) ->
+    Batman.DOM[type] = (props, children...) ->
       # you can use `class=` with Batman.DOM
       if classes = props?.class
         props.className = classes
@@ -49,11 +50,6 @@ for tagName, tagFunc of React.DOM
       if styles = props?.style
         props.style = Batman.DOM.React.StyleAttributeBinding::styleStringToObject(styles)
 
-      # bindBatmanDescriptor will add context
-      descriptor = {
-        type: tagName
-        props
-        children
-      }
+      descriptor = new Batman.DOM.React.Descriptor({type, props, children})
 
 

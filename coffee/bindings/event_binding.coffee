@@ -4,7 +4,7 @@ class Batman.DOM.React.EventBinding extends Batman.DOM.React.AbstractBinding
     eventHandlers = {}
     eventHandlers["on#{Batman.helpers.camelize(@attrArg)}"] = (e) =>
       e.preventDefault()
-      handler.apply(@, arguments)
+      handler()
     @safelySetProps(eventHandlers)
     @descriptor
 

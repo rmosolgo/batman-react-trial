@@ -63,40 +63,7 @@ class Batman.DOM.React.AbstractBinding
       @value
 
   lookupKeypath: (keypath) ->
-    [keypathWasFound, injectedValue] = @_lookupInjectedKeypath(keypath)
-    if keypathWasFound
-      injectedValue
-    else
-      @descriptor?.contextObserver?.getContext(keypath)
-
-  _lookupInjectedKeypath: (keypath) ->
-    # returns [keypathWasFound, injectedValue], so keypath could be found and value could be undefined!
-    return [false, undefined] unless @descriptor.props.injectedContext?
-    parts = keypath.split(".")
-    firstPart = parts.shift()
-    if obj = @descriptor.props.injectedContext[firstPart]
-      if parts.length
-        path = parts.join(".")
-        hit = obj.get(path)
-        # HACK: how can I make contextObserver more self-sufficient?
-        # would be great to somehow coopt built-in source tracking
-        prop = obj.property(path)
-        if @descriptor.contextObserver.observeProperty(prop)
-          console.log("observing #{path} on #{firstPart}")
-      else
-        hit = obj
-      return [true, hit]
-    else if @descriptor.props.injectedContext._injectedObjects?.length
-      for obj in @descriptor.props.injectedContext._injectedObjects
-        if obj.get(firstPart)?
-          hit = obj.get(keypath)
-          # HACK: See above
-          prop = obj.property(keypath)
-          @descriptor.contextObserver.observeProperty(prop)
-          return [true, hit]
-      return [false, undefined] # no match
-    else
-       return [false, undefined]
+    @descriptor.context.get(keypath)
 
   constructor: (@descriptor, @bindingName, @keypath, @attrArg) ->
     @tagName =  @descriptor.type
@@ -216,11 +183,10 @@ class Batman.DOM.React.BindBinding extends Batman.DOM.React.AbstractBinding
         when "CHECKBOX" then e.target.checked
         else e.target.value
       reactDebug "updating " + keypath + " to: ", value
-      @descriptor.contextObserver.setContext(keypath, value)
+      @descriptor.context.set(keypath, value)
 class Batman.DOM.React.ContextAttributeBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
-    @descriptor.props.injectedContext ||= {}
-    @descriptor.props.injectedContext[@attrArg] = @filteredValue
+    @descriptor.context = @descriptor.context.injectContext(@attrArg, @filteredValue)
     @descriptor
 class Batman.DOM.React.ContextBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
@@ -238,7 +204,7 @@ class Batman.DOM.React.EventBinding extends Batman.DOM.React.AbstractBinding
     eventHandlers = {}
     eventHandlers["on#{Batman.helpers.camelize(@attrArg)}"] = (e) =>
       e.preventDefault()
-      handler.apply(@, arguments)
+      handler()
     @safelySetProps(eventHandlers)
     @descriptor
 
@@ -258,34 +224,32 @@ class Batman.DOM.React.EventBinding extends Batman.DOM.React.AbstractBinding
 class Batman.DOM.React.ForEachBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
     _getKey = @_getEnumerateKey
+    _removeBinding = @_removeForEachBinding.bind(@)
     itemName = @attrArg
     collectionName = @keypath
     collection = @filteredValue
-    {type, children, props, contextObserver} = @descriptor
-    forEachProp = {}
-    forEachProp["data-foreach-#{itemName}"] = true
-    Batman.unmixin(props, forEachProp)
+    return [] if !collection
+    {type, children, props, context} = @descriptor
 
     displayName = Batman.helpers.camelize("enumerate_" + itemName + "_in_" + collectionName.split(".")[0])
-    component = contextObserver.component
 
     if collection?.toArray
-      collection = @lookupKeypath("#{@keypath}.toArray")
+      collection = collection.toArray()
 
-    list = for item in collection
+    newDescriptors = []
+    Batman.forEach collection, (item) ->
       key = _getKey(item)
-      injectedContext = Batman.mixin({}, props.injectedContext)
-      injectedContext[itemName] = item
-      newProps = Batman.mixin({}, props, {key, injectedContext})
-      descriptor = {
+      injectedContext = context.injectContext(itemName, item)
+      newProps = Batman.mixin({}, props, {key})
+      _removeBinding(newProps)
+      descriptor = new Batman.DOM.React.Descriptor({
         type
-        children: cloneDescriptor(children)
+        children: cloneDescriptor(children, injectedContext)
         props: newProps
-        contextObserver
-      }
-      # reactDebug "#{type} for #{itemName} #{item?.get?('name')} => #{JSON.stringify(newProps)} #{contextObserver.get('_batmanID')}", descriptor
-      bindBatmanDescriptor(descriptor)
-    list
+        context: injectedContext
+      })
+      newDescriptors.push(descriptor)
+    newDescriptors
 
   _getEnumerateKey: (item) ->
     if item.hashKey?
@@ -293,21 +257,24 @@ class Batman.DOM.React.ForEachBinding extends Batman.DOM.React.AbstractBinding
     else
       JSON.stringify(item)
 
+  _removeForEachBinding: (props) ->
+    forEachProp = {}
+    forEachProp["data-foreach-#{@attrArg}"] = true
+    Batman.unmixin(props, forEachProp)
+
 cloneDescriptor = (descriptor, ctx) ->
-  argType = Batman.typeOf(descriptor)
-  switch argType
-    when "Array"
-      (cloneDescriptor(item) for item in descriptor)
-    when "Object"
-      newDescriptor = {}
-      for key, value of descriptor
-        if key in ["contextObserver"]
-          continue
-        else
-          newDescriptor[key] = cloneDescriptor(value)
-      newDescriptor
-    else
-      descriptor
+  # console.log "cloning", descriptor
+  if descriptor instanceof Array
+    (cloneDescriptor(item) for item in descriptor)
+  else if descriptor instanceof Batman.DOM.React.Descriptor
+      newDescriptor = new Batman.DOM.React.Descriptor({
+        type: descriptor.type
+        props: Batman.mixin({}, descriptor.props)
+        children: cloneDescriptor(descriptor.children, ctx)
+        context: ctx
+      })
+  else
+    descriptor
 
 class Batman.DOM.React.HideIfBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
@@ -324,7 +291,7 @@ class Batman.DOM.React.NotImplementedBinding extends Batman.DOM.React.AbstractBi
     @descriptor
 class Batman.DOM.React.PartialBinding extends Batman.DOM.React.AbstractBinding
   applyBinding: ->
-    {type, contextObserver} = @descriptor
+    {type, context} = @descriptor
     async = false
     Batman.reactComponentForHTMLPath @filteredValue, (componentClass) =>
       injectedContext = @descriptor.props.injectedContext
@@ -334,12 +301,12 @@ class Batman.DOM.React.PartialBinding extends Batman.DOM.React.AbstractBinding
         type
         props: {}
         children
-        contextObserver
+        context
       }
       @descriptor = partialDescriptor
       if async
         reactDebug "data-partial async #{@filteredValue}"
-        contextObserver.forceUpdate()
+        context.forceUpdate()
     async = true
     @descriptor
 class Batman.DOM.React.RemoveClassBinding extends Batman.DOM.React.AbstractBinding
@@ -474,6 +441,69 @@ Batman.Controller::finishRenderReact = (options) ->
   reactDebug "rendered #{@routingKey}/#{options.action}", options.componentName
   options.frame?.finishOperation()
 
+class Batman.DOM.React.Context extends Batman.Object
+  constructor: ({@component, @controller}) ->
+    @_storage = new Batman.Hash
+    @_targets = [@controller, Batman.currentApp]
+
+  # default accessor:
+  #   - try to find it
+  #   - otherwise set it on @_storage
+  @accessor
+    get: (key) ->
+      parts = key.split(".")
+      firstPart = parts.shift()
+      base = @_findBase(firstPart)
+      value = base.get(key)
+      if Batman.typeOf(value) is "Function"
+        terminal = new Batman.Keypath(base, key).terminalProperty()
+        value = value.bind(terminal.base)
+      value
+    set: (key, value) ->
+      parts = key.split(".")
+      firstPart = parts.shift()
+      base = @_findBase(firstPart)
+      base.set(key, value)
+
+  forceUpdate: ->
+    if !@constructor._UPDATING
+      @constructor._UPDATING = true
+      @component.forceUpdate =>
+        @constructor._UPDATING = false
+
+  injectContext: (key, value) ->
+    proxy = new Batman.DOM.React.ContextProxy(@)
+    proxy.accessor key, ->
+      console.log "found proxied #{key}"
+      value
+    proxy
+
+  _findBase: (firstPart) ->
+    for target in @_targets
+      if typeof target.get(firstPart) isnt "undefined"
+        console.log "found base #{target.name || target.constructor.name} for #{firstPart}"
+        return target
+    console.log "falling back to @_storage for #{firstPart}"
+    return @_storage
+
+  die: ->
+    @_batman = null
+    @_storage = null
+    @controller = null
+    @component = null
+    @_targets = null
+    @isDead = true
+
+class Batman.DOM.React.ContextProxy extends Batman.Proxy
+  injectContext: (key, value) ->
+    proxy = new Batman.DOM.React.ContextProxy(@)
+    proxy.accessor(key, -> value)
+    proxy
+
+  die: ->
+    @_batman = null
+    @target.die()
+
 class Batman.ContextObserver extends Batman.Hash
   @COUNT = 0
   constructor: ({@component, @target}) ->
@@ -563,6 +593,62 @@ class Batman.ContextObserver extends Batman.Hash
       console.log("#{@constructor.COUNT} ContextObservers")
       @constructor._logging = false
 
+class Batman.DOM.React.Descriptor extends Batman.Object
+  @COUNTER: 0
+  @UPDATING: false
+
+  constructor: ({@type, @props, @children, @context}) ->
+    # @context is added later ...
+
+  @accessor 'toReact', ->
+    reactDescriptor = @performReactTransforms()
+    {type, props, children} = reactDescriptor
+    if children?.length
+      children = (@_handleTransformedDescriptor(child, @context) for child in children)
+
+    if type?
+      React.DOM[type](props, children)
+    else
+      reactDescriptor
+
+
+  performReactTransforms:  ->
+    descriptor = {@type, @props, @children, @context}
+
+    for key, value of @props when key.substr(0,5) is "data-"
+      keyParts = key.split("-")
+      bindingName = keyParts[1]
+
+      if keyParts.length > 2
+        attrArg = keyParts.slice(2).join("-") # allows data-addclass-alert--error
+      else # have to unset since this isn't in a closure
+        attrArg = undefined
+
+      if attrArg?
+        bindingClass = Batman.DOM.reactAttrReaders[bindingName]
+      else
+        bindingClass = Batman.DOM.reactReaders[bindingName]
+
+      if !bindingClass
+        console.warn("No binding found for #{key}=#{value} on #{@type}")
+      else if bindingName is "foreach"
+        descriptor = new bindingClass(descriptor, bindingName, value, attrArg).applyBinding()
+        break
+      else
+        descriptor = new bindingClass(descriptor, bindingName, value, attrArg).applyBinding()
+
+
+    @_handleTransformedDescriptor(descriptor, @context)
+
+  _handleTransformedDescriptor: (descriptor, context) ->
+    if descriptor instanceof Array
+      # debugger
+      (@_handleTransformedDescriptor(child, context) for child in descriptor)
+    else if descriptor instanceof Batman.DOM.React.Descriptor
+      descriptor.context ||= context
+      descriptor.get('toReact')
+    else
+      descriptor
 Batman.DOM.reactReaders =
   bind: Batman.DOM.React.BindBinding
   route: Batman.DOM.React.RouteBinding
@@ -580,6 +666,7 @@ Batman.DOM.reactReaders =
   ## WONTFIX:
   target: Batman.DOM.React.BindBinding
   source: Batman.DOM.React.BindBinding
+
   ## WONT IMPLEMENT:
   defineview: Batman.DOM.React.NotImplementedBinding
   insertif: Batman.DOM.React.NotImplementedBinding
@@ -602,9 +689,9 @@ Batman.DOM.reactAttrReaders =
   source: Batman.DOM.React.BindAttributeBinding
 
 
-for tagName, tagFunc of React.DOM
-  do (tagName, tagFunc) ->
-    Batman.DOM[tagName] = (props, children...) ->
+for type, tagFunc of React.DOM
+  do (type, tagFunc) ->
+    Batman.DOM[type] = (props, children...) ->
       # you can use `class=` with Batman.DOM
       if classes = props?.class
         props.className = classes
@@ -614,12 +701,7 @@ for tagName, tagFunc of React.DOM
       if styles = props?.style
         props.style = Batman.DOM.React.StyleAttributeBinding::styleStringToObject(styles)
 
-      # bindBatmanDescriptor will add context
-      descriptor = {
-        type: tagName
-        props
-        children
-      }
+      descriptor = new Batman.DOM.React.Descriptor({type, props, children})
 
 
 
@@ -627,80 +709,32 @@ for tagName, tagFunc of React.DOM
 Batman.ReactMixin =
   getInitialState: ->
     reactDebug "getInitialState #{@constructor?.displayName || @props?.key}"
-    @_observeContext()
+    @_createTopLevelContext()
     return {}
 
-  willReceiveProps: (nextProps) ->
-    reactDebug "willReceiveProps #{@constructor?.displayName || @props?.key}", nextProps
-    @_observeContext(nextProps)
-
   componentWillUnmount: ->
-    if @_observer.component is @ # don't let data-partials kill the main observer!
-      reactDebug "componentWillUnmount, killing observer"
-      @_observer.die()
+    if @_context.component is @ # don't let data-partials kill the main observer!
+      reactDebug "componentWillUnmount, killing context"
+      @_context.die()
 
-  _observeContext: (props) ->
-    reactDebug "_observeContext", props
-    props ||= @props
-    if props.contextObserver
-      if @_observer? and @_observer isnt props.contextObserver
-        reactDebug "Killing observer because props.contextObserver was passed in"
-        @_observer?.die()
-      if !@_observer?
-        @_observer = props.contextObserver
-    else
-      target = props.contextTarget ||= new Batman.Object
-      if @_observer? && target isnt @_observer.target
-        reactDebug "Killing observer because new target passed in"
-        @_observer?.die()
-        @_observer = null
-      if !@_observer?
-        @props.contextTarget = target
-        @_observer = new Batman.ContextObserver(target: target, component: this)
+  _createTopLevelContext: ->
+    @_context ||= new Batman.DOM.React.Context({controller: @props.controller, component: @})
+
+  _setupTreeDescriptor: ->
+    @treeDescriptor = @renderBatman()
+    @treeDescriptor.context = @_context
+    console.log "observing #{@treeDescriptor.get('_batmanID')}"
+    @treeDescriptor.property('toReact').observe =>
+      console.log "forceupdate"
+      @forceUpdate()
 
   renderTree: ->
-    tree = @renderBatman()
-    tree.contextObserver = @_observer
-    components = bindBatmanDescriptor(tree)
-    components
+    if !@treeDescriptor
+      @_setupTreeDescriptor()
+    react = @treeDescriptor.get('toReact')
+    # debugger
+    react
 
-bindBatmanDescriptor = (descriptor = {}) ->
-  descriptorType = Batman.typeOf(descriptor)
-  return descriptor if descriptorType is "String"
-
-  for key, value of descriptor.props when key.substr(0,5) is "data-"
-    keyParts = key.split("-")
-    bindingName = keyParts[1]
-
-    if keyParts.length > 2
-      attrArg = keyParts.slice(2).join("-") # allows data-addclass-alert--error
-    else # have to unset since this isn't in a closure
-      attrArg = undefined
-
-    if attrArg?
-      bindingClass = Batman.DOM.reactAttrReaders[bindingName]
-    else
-      bindingClass = Batman.DOM.reactReaders[bindingName]
-
-    if !bindingClass
-      console.warn("No binding found for #{key}=#{value} on #{descriptor.type}")
-    else
-      descriptor = new bindingClass(descriptor, bindingName, value, attrArg).applyBinding()
-      # foreach binding returns an array of children!
-      if bindingName is "foreach"
-        break
-
-  if descriptor?.children
-    {type, props, children} = descriptor
-    newChildren = for child in children
-      if descriptor.props?.injectedContext && child.type
-        child.props ||= {}
-        child.props.injectedContext = descriptor.props.injectedContext
-      child.contextObserver ?= descriptor.contextObserver
-      bindBatmanDescriptor(child)
-    React.DOM[type](props, newChildren...)
-  else
-    descriptor
 
 Batman.createComponent = (options) ->
   options.mixins = options.mixins or []

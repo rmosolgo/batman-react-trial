@@ -38,4 +38,4 @@ class Batman.DOM.React.BindBinding extends Batman.DOM.React.AbstractBinding
         when "CHECKBOX" then e.target.checked
         else e.target.value
       reactDebug "updating " + keypath + " to: ", value
-      @descriptor.contextObserver.setContext(keypath, value)
+      @descriptor.context.set(keypath, value)
