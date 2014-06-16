@@ -8,7 +8,7 @@ class Batman.DOM.React.BindBinding extends Batman.DOM.React.AbstractBinding
             if !!@filteredValue
               {checked: true}
             else
-              {}
+              {checked: false}
           when "radio"
             if @filteredValue? and @filteredValue is @descriptor.props.value
               {checked: true}
@@ -19,7 +19,7 @@ class Batman.DOM.React.BindBinding extends Batman.DOM.React.AbstractBinding
         newProps.onChange = @updateKeypath()
       when "select"
         newProps =
-          value: @filteredValue
+          value: @filteredValue ? ""
           onChange: @updateKeypath()
       else # set innerText
 

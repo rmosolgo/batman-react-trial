@@ -1,5 +1,11 @@
 <div>
   <h1 data-bind='animal.name'></h1>
+  <p data-showif='animal.animalClass | eq "Mammal"'>
+    Mammalian
+  </p>
+  <p data-showif='animal.animalClass | eq "Reptile"'>
+    Reptilian
+  </p>
   <p>I put this page here to test data-route bindings.</p>
   <p style='font-weight: 800;' data-style-font-size='animal.fontSize' data-style-color='animal.color'>
     This font-size is bound to <code>animal.name</code>.

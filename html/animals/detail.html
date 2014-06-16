@@ -3,8 +3,8 @@
   <span data-bind='animal.name'></span>
   &nbsp;were loaded from a different HTML file:
   <ul data-context='animal'>
-    <li data-bind='canFly | prepend "Can Fly: "'></li>
-    <li data-bind='color | prepend "Color: "'></li>
-    <li data-bind='animalClass'></li>
+    <li data-bind='canFly | default "Not selected" | prepend "Can Fly: "'></li>
+    <li data-bind='color | default "Not selected" | prepend "Color: "'></li>
+    <li data-bind='animalClass | default "Not selected"'></li>
   </ul>
 </p>

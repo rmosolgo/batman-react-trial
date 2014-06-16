@@ -16,22 +16,29 @@ Batman.reactComponentForRoutingKeyAndAction = (routingKey, action, callback) ->
   componentClass = Batman.currentApp[componentName]
   if !componentClass
     HTMLPath = "#{routingKey}/#{action}"
-    Batman.reactComponentForHTMLPath HTMLPath, (componentClass) ->
-      componentClass.displayName = componentName
+    Batman.reactComponentForHTMLPath HTMLPath, componentName, (componentClass) ->
       Batman.currentApp[componentName] = componentClass
       console.log("Defined React Component: #{componentName}")
       callback(componentClass)
   else
     callback(componentClass)
 
-Batman.reactComponentForHTMLPath = (HTMLPath, callback) ->
+Batman.reactComponentForHTMLPath = (HTMLPath, displayName, callback) ->
+  if !callback?
+    callback = displayName
+    displayName = HTMLPath
+  Batman.reactCodeForHTMLPath HTMLPath, (reactFunction) ->
+    renderBatman = reactFunction
+    componentClass = Batman.createComponent({renderBatman, displayName})
+    callback(componentClass)
+
+Batman.reactCodeForHTMLPath = (HTMLPath, callback) ->
   Batman.View.store.onResolved HTMLPath, =>
     html = Batman.View.store.get(HTMLPath)
     wrappedHTML = "/** @jsx Batman.DOM */\n<div>#{html}</div>"
     reactCode = JSXTransformer.transform(wrappedHTML).code
-    renderBatman = -> eval(reactCode)
-    componentClass = Batman.createComponent({renderBatman})
-    callback(componentClass)
+    reactFunction = -> eval(reactCode)
+    callback(reactFunction)
 
 Batman.Controller::renderReact = (options={}) ->
   if frame = @_actionFrames?[@_actionFrames.length - 1]
@@ -61,8 +68,8 @@ Batman.Controller::finishRenderReact = (options) ->
 
   component = options.componentClass(controller: @)
   if existingComponent = targetYield.get('component')
-    reactDebug("existing component", existingComponent)
-    React.unmountComponentAtNode(yieldNode)
+    reactDebug("existing component", existingComponent.constructor?.displayName)
+    # React.unmountComponentAtNode(yieldNode)
   targetYield.set('component', component)
 
   # clean up an existing view if there is one

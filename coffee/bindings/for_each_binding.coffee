@@ -5,7 +5,8 @@ class Batman.DOM.React.ForEachBinding extends Batman.DOM.React.AbstractBinding
     itemName = @attrArg
     collectionName = @keypath
     collection = @filteredValue
-    return [] if !collection
+    if !collection
+      return []
     {type, children, props, context} = @descriptor
 
     displayName = Batman.helpers.camelize("enumerate_" + itemName + "_in_" + collectionName.split(".")[0])
@@ -16,8 +17,8 @@ class Batman.DOM.React.ForEachBinding extends Batman.DOM.React.AbstractBinding
     newDescriptors = []
     Batman.forEach collection, (item) ->
       key = _getKey(item)
-      injectedContext = context.injectContext(itemName, item)
-      newProps = Batman.mixin({}, props, {key})
+      injectedContext = context.injectContextAttribute(itemName, item)
+      newProps = Batman.mixin({}, props, {key, item})
       _removeBinding(newProps)
       descriptor = new Batman.DOM.React.Descriptor({
         type
@@ -25,6 +26,7 @@ class Batman.DOM.React.ForEachBinding extends Batman.DOM.React.AbstractBinding
         props: newProps
         context: injectedContext
       })
+      console.log("descriptor for #{displayName} #{item?.get?('name') || collectionName}")
       newDescriptors.push(descriptor)
     newDescriptors
 
@@ -39,16 +41,18 @@ class Batman.DOM.React.ForEachBinding extends Batman.DOM.React.AbstractBinding
     forEachProp["data-foreach-#{@attrArg}"] = true
     Batman.unmixin(props, forEachProp)
 
-cloneDescriptor = (descriptor, ctx) ->
-  # console.log "cloning", descriptor
+cloneDescriptor = (descriptor, context) ->
+  if !context?
+    debugger
   if descriptor instanceof Array
-    (cloneDescriptor(item) for item in descriptor)
+    (cloneDescriptor(item, context) for item in descriptor)
   else if descriptor instanceof Batman.DOM.React.Descriptor
-      newDescriptor = new Batman.DOM.React.Descriptor({
-        type: descriptor.type
-        props: Batman.mixin({}, descriptor.props)
-        children: cloneDescriptor(descriptor.children, ctx)
-        context: ctx
-      })
+    # console.log("cloning descriptor with context ID #{context.get("_batmanID")}")
+    newDescriptor = new Batman.DOM.React.Descriptor({
+      type: descriptor.type
+      props: Batman.mixin({}, descriptor.props)
+      children: cloneDescriptor(descriptor.children, context)
+      context: context
+    })
   else
     descriptor

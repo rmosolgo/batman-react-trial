@@ -1,9 +1,8 @@
 (function() {
-  var cloneDescriptor, tagFunc, type, _base, _fn, _ref,
+  var CONTEXT_DEBUG, cloneDescriptor, contextDebug, tagFunc, type, _base, _fn, _ref,
     __hasProp = {}.hasOwnProperty,
     __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-    __slice = [].slice,
-    __indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
+    __slice = [].slice;
 
   (_base = Batman.DOM).React || (_base.React = {});
 
@@ -56,6 +55,9 @@
     };
 
     AbstractBinding.prototype.lookupKeypath = function(keypath) {
+      if (!this.descriptor.context) {
+        debugger;
+      }
       return this.descriptor.context.get(keypath);
     };
 
@@ -124,6 +126,8 @@
     };
 
     AbstractBinding.prototype.safelySetProps = function(props) {
+      var _base1;
+      (_base1 = this.descriptor).props || (_base1.props = {});
       return Batman.mixin(this.descriptor.props, props);
     };
 
@@ -181,7 +185,7 @@
     }
 
     BindBinding.prototype.applyBinding = function() {
-      var inputType, newProps;
+      var inputType, newProps, _ref;
       switch (this.tagName) {
         case "input":
           inputType = this.descriptor.props.type.toLowerCase();
@@ -193,7 +197,9 @@
                     checked: true
                   };
                 } else {
-                  return {};
+                  return {
+                    checked: false
+                  };
                 }
                 break;
               case "radio":
@@ -217,7 +223,7 @@
           break;
         case "select":
           newProps = {
-            value: this.filteredValue,
+            value: (_ref = this.filteredValue) != null ? _ref : "",
             onChange: this.updateKeypath()
           };
           break;
@@ -264,7 +270,9 @@
     }
 
     ContextAttributeBinding.prototype.applyBinding = function() {
-      this.descriptor.context = this.descriptor.context.injectContext(this.attrArg, this.filteredValue);
+      var newContext;
+      newContext = this.descriptor.context.injectContextAttribute(this.attrArg, this.filteredValue);
+      this.descriptor.context = newContext;
       return this.descriptor;
     };
 
@@ -280,10 +288,9 @@
     }
 
     ContextBinding.prototype.applyBinding = function() {
-      var _base1, _base2;
-      (_base1 = this.descriptor.props).injectedContext || (_base1.injectedContext = {});
-      (_base2 = this.descriptor.props.injectedContext)._injectedObjects || (_base2._injectedObjects = []);
-      this.descriptor.props.injectedContext._injectedObjects.push(this.filteredValue);
+      var newContext;
+      newContext = this.descriptor.context.injectContextTarget(this.filteredValue);
+      this.descriptor.context = newContext;
       return this.descriptor;
     };
 
@@ -328,6 +335,13 @@
       return this.descriptor;
     };
 
+    EventBinding.prototype.getUnfilteredValue = function() {
+      var base, terminal;
+      base = this.descriptor.context.baseForKeypath(this.key);
+      terminal = new Batman.Keypath(base, this.key).terminalProperty();
+      return this.unfilteredValue = terminal.getValue().bind(terminal.base);
+    };
+
     return EventBinding;
 
   })(Batman.DOM.React.AbstractBinding);
@@ -358,9 +372,10 @@
       Batman.forEach(collection, function(item) {
         var descriptor, injectedContext, key, newProps;
         key = _getKey(item);
-        injectedContext = context.injectContext(itemName, item);
+        injectedContext = context.injectContextAttribute(itemName, item);
         newProps = Batman.mixin({}, props, {
-          key: key
+          key: key,
+          item: item
         });
         _removeBinding(newProps);
         descriptor = new Batman.DOM.React.Descriptor({
@@ -369,6 +384,7 @@
           props: newProps,
           context: injectedContext
         });
+        console.log("descriptor for " + displayName + " " + ((item != null ? typeof item.get === "function" ? item.get('name') : void 0 : void 0) || collectionName));
         return newDescriptors.push(descriptor);
       });
       return newDescriptors;
@@ -393,21 +409,24 @@
 
   })(Batman.DOM.React.AbstractBinding);
 
-  cloneDescriptor = function(descriptor, ctx) {
+  cloneDescriptor = function(descriptor, context) {
     var item, newDescriptor, _i, _len, _results;
+    if (context == null) {
+      debugger;
+    }
     if (descriptor instanceof Array) {
       _results = [];
       for (_i = 0, _len = descriptor.length; _i < _len; _i++) {
         item = descriptor[_i];
-        _results.push(cloneDescriptor(item));
+        _results.push(cloneDescriptor(item, context));
       }
       return _results;
     } else if (descriptor instanceof Batman.DOM.React.Descriptor) {
       return newDescriptor = new Batman.DOM.React.Descriptor({
         type: descriptor.type,
         props: Batman.mixin({}, descriptor.props),
-        children: cloneDescriptor(descriptor.children, ctx),
-        context: ctx
+        children: cloneDescriptor(descriptor.children, context),
+        context: context
       });
     } else {
       return descriptor;
@@ -422,9 +441,7 @@
     }
 
     HideIfBinding.prototype.applyBinding = function() {
-      var contentValue;
-      contentValue = this.filteredValue;
-      Batman.DOM.React.ShowIfBinding.prototype._showIf.call(this, !contentValue);
+      Batman.DOM.React.ShowIfBinding.prototype._showIf.call(this, !this.filteredValue);
       return this.descriptor;
     };
 
@@ -458,28 +475,25 @@
     }
 
     PartialBinding.prototype.applyBinding = function() {
-      var async, context, type, _ref;
-      _ref = this.descriptor, type = _ref.type, context = _ref.context;
+      var async, context, props, type, _ref;
+      _ref = this.descriptor, type = _ref.type, context = _ref.context, props = _ref.props;
       async = false;
-      Batman.reactComponentForHTMLPath(this.filteredValue, (function(_this) {
-        return function(componentClass) {
-          var childProps, children, injectedContext, partialDescriptor;
-          injectedContext = _this.descriptor.props.injectedContext;
+      Batman.reactCodeForHTMLPath(this.filteredValue, (function(_this) {
+        return function(reactFunc) {
+          var childProps, children, partialDescriptor;
           childProps = {
-            injectedContext: injectedContext,
             key: _this.filteredValue
           };
-          children = [componentClass(childProps).renderBatman()];
+          children = [reactFunc(childProps)];
           partialDescriptor = {
             type: type,
-            props: {},
+            props: props,
             children: children,
             context: context
           };
           _this.descriptor = partialDescriptor;
           if (async) {
-            reactDebug("data-partial async " + _this.filteredValue);
-            return context.forceUpdate();
+            return context.component.forceUpdate();
           }
         };
       })(this));
@@ -548,23 +562,21 @@
     }
 
     ShowIfBinding.prototype.applyBinding = function() {
-      var contentValue;
-      contentValue = this.filteredValue;
-      this._showIf(!!contentValue);
+      this._showIf(this.filteredValue);
       return this.descriptor;
     };
 
-    ShowIfBinding.prototype._showIf = function(trueOrFalse) {
+    ShowIfBinding.prototype._showIf = function(shouldShow) {
       var style;
-      style = Batman.mixin({}, this.descriptor.props.style || {});
-      if (!trueOrFalse) {
-        style.display = 'none !important';
-      } else {
+      style = this.descriptor.props.style || {};
+      if (shouldShow) {
+        console.log("Showing " + this.descriptor.type + " " + this.descriptor.children + " for " + this.keypath);
         delete style.display;
+      } else {
+        console.log("Hiding " + this.descriptor.type + " " + this.descriptor.children + " for " + this.keypath);
+        style.display = 'none !important';
       }
-      return this.safelySetProps({
-        style: style
-      });
+      return this.descriptor.props.style = style;
     };
 
     return ShowIfBinding;
@@ -629,8 +641,7 @@
     componentClass = Batman.currentApp[componentName];
     if (!componentClass) {
       HTMLPath = "" + routingKey + "/" + action;
-      return Batman.reactComponentForHTMLPath(HTMLPath, function(componentClass) {
-        componentClass.displayName = componentName;
+      return Batman.reactComponentForHTMLPath(HTMLPath, componentName, function(componentClass) {
         Batman.currentApp[componentName] = componentClass;
         console.log("Defined React Component: " + componentName);
         return callback(componentClass);
@@ -640,20 +651,33 @@
     }
   };
 
-  Batman.reactComponentForHTMLPath = function(HTMLPath, callback) {
+  Batman.reactComponentForHTMLPath = function(HTMLPath, displayName, callback) {
+    if (callback == null) {
+      callback = displayName;
+      displayName = HTMLPath;
+    }
+    return Batman.reactCodeForHTMLPath(HTMLPath, function(reactFunction) {
+      var componentClass, renderBatman;
+      renderBatman = reactFunction;
+      componentClass = Batman.createComponent({
+        renderBatman: renderBatman,
+        displayName: displayName
+      });
+      return callback(componentClass);
+    });
+  };
+
+  Batman.reactCodeForHTMLPath = function(HTMLPath, callback) {
     return Batman.View.store.onResolved(HTMLPath, (function(_this) {
       return function() {
-        var componentClass, html, reactCode, renderBatman, wrappedHTML;
+        var html, reactCode, reactFunction, wrappedHTML;
         html = Batman.View.store.get(HTMLPath);
         wrappedHTML = "/** @jsx Batman.DOM */\n<div>" + html + "</div>";
         reactCode = JSXTransformer.transform(wrappedHTML).code;
-        renderBatman = function() {
+        reactFunction = function() {
           return eval(reactCode);
         };
-        componentClass = Batman.createComponent({
-          renderBatman: renderBatman
-        });
-        return callback(componentClass);
+        return callback(reactFunction);
       };
     })(this));
   };
@@ -683,7 +707,7 @@
   };
 
   Batman.Controller.prototype.finishRenderReact = function(options) {
-    var component, existingComponent, targetYield, view, yieldName, yieldNode, _ref;
+    var component, existingComponent, targetYield, view, yieldName, yieldNode, _ref, _ref1;
     yieldName = options.into || "main";
     targetYield = Batman.DOM.Yield.withName(yieldName);
     yieldNode = targetYield.containerNode;
@@ -691,8 +715,7 @@
       controller: this
     });
     if (existingComponent = targetYield.get('component')) {
-      reactDebug("existing component", existingComponent);
-      React.unmountComponentAtNode(yieldNode);
+      reactDebug("existing component", (_ref = existingComponent.constructor) != null ? _ref.displayName : void 0);
     }
     targetYield.set('component', component);
     if (view = targetYield.get('contentView')) {
@@ -706,59 +729,83 @@
     });
     React.renderComponent(component, yieldNode);
     reactDebug("rendered " + this.routingKey + "/" + options.action, options.componentName);
-    return (_ref = options.frame) != null ? _ref.finishOperation() : void 0;
+    return (_ref1 = options.frame) != null ? _ref1.finishOperation() : void 0;
+  };
+
+  CONTEXT_DEBUG = false;
+
+  contextDebug = function() {
+    if (CONTEXT_DEBUG) {
+      return console.log.apply(console, arguments);
+    }
+  };
+
+  Batman.DOM.React.ContextMixin = {
+    initialize: function() {
+      this.injectContextAttribute = function(key, value) {
+        this._prepareProxies();
+        return this._proxies.forKey(key).getOrSet(value, (function(_this) {
+          return function() {
+            var proxy;
+            proxy = new Batman.DOM.React.ContextAttributeProxy(_this);
+            proxy.accessor(key, function() {
+              return value;
+            });
+            return proxy;
+          };
+        })(this));
+      };
+      this.injectContextTarget = function(object) {
+        this._prepareProxies();
+        return this._proxies.getOrSet(object, (function(_this) {
+          return function() {
+            var proxy;
+            proxy = new Batman.DOM.React.ContextTargetProxy(_this);
+            proxy._context = object;
+            return proxy;
+          };
+        })(this));
+      };
+      return this._prepareProxies = function() {
+        return this._proxies || (this._proxies = new Batman.DOM.React.ContextProxyHash);
+      };
+    }
   };
 
   Batman.DOM.React.Context = (function(_super) {
     __extends(Context, _super);
 
     function Context(_arg) {
+      var _ref, _ref1;
       this.component = _arg.component, this.controller = _arg.controller;
+      Context.__super__.constructor.call(this, {});
+      this.componentName = (_ref = this.component) != null ? (_ref1 = _ref.constructor) != null ? _ref1.displayName : void 0 : void 0;
       this._storage = new Batman.Hash;
       this._targets = [this.controller, Batman.currentApp];
+      contextDebug("CONTEXT created " + (this.get('_batmanID')));
     }
+
+    Context.mixin(Batman.DOM.React.ContextMixin);
 
     Context.accessor({
       get: function(key) {
-        var base, firstPart, parts, terminal, value;
-        parts = key.split(".");
-        firstPart = parts.shift();
-        base = this._findBase(firstPart);
-        value = base.get(key);
-        if (Batman.typeOf(value) === "Function") {
-          terminal = new Batman.Keypath(base, key).terminalProperty();
-          value = value.bind(terminal.base);
-        }
-        return value;
+        var base, value;
+        base = this.baseForKeypath(key);
+        return value = base != null ? base.get(key) : void 0;
       },
       set: function(key, value) {
-        var base, firstPart, parts;
-        parts = key.split(".");
-        firstPart = parts.shift();
-        base = this._findBase(firstPart);
-        return base.set(key, value);
+        var base;
+        base = this.baseForKeypath(key);
+        return base != null ? base.set(key, value) : void 0;
       }
     });
 
-    Context.prototype.forceUpdate = function() {
-      if (!this.constructor._UPDATING) {
-        this.constructor._UPDATING = true;
-        return this.component.forceUpdate((function(_this) {
-          return function() {
-            return _this.constructor._UPDATING = false;
-          };
-        })(this));
-      }
-    };
-
-    Context.prototype.injectContext = function(key, value) {
-      var proxy;
-      proxy = new Batman.DOM.React.ContextProxy(this);
-      proxy.accessor(key, function() {
-        console.log("found proxied " + key);
-        return value;
-      });
-      return proxy;
+    Context.prototype.baseForKeypath = function(keypath) {
+      var base, firstPart, parts;
+      contextDebug("CONTEXT lookup " + (this.get("_batmanID")) + " " + keypath + " " + this.constructor.name);
+      parts = keypath.split(".");
+      firstPart = parts.shift();
+      return base = this._findBase(firstPart);
     };
 
     Context.prototype._findBase = function(firstPart) {
@@ -767,21 +814,39 @@
       for (_i = 0, _len = _ref.length; _i < _len; _i++) {
         target = _ref[_i];
         if (typeof target.get(firstPart) !== "undefined") {
-          console.log("found base " + (target.name || target.constructor.name) + " for " + firstPart);
           return target;
         }
       }
-      console.log("falling back to @_storage for " + firstPart);
       return this._storage;
     };
 
     Context.prototype.die = function() {
-      this._batman = null;
+      var event, _, _ref, _ref1;
+      if (this.isDead) {
+        console.warn("Trying to kill and already-dead " + this.constructor.name);
+        return;
+      }
+      contextDebug("CONTEXT dying  " + (this.get('_batmanID')));
+      if ((_ref = this._batman.properties) != null) {
+        _ref.forEach(function(key, property) {
+          return property.die();
+        });
+      }
+      if (this._batman.events) {
+        _ref1 = this._batman.events;
+        for (_ in _ref1) {
+          event = _ref1[_];
+          event.clearHandlers();
+        }
+      }
       this._storage = null;
+      this._proxies = null;
       this.controller = null;
       this.component = null;
       this._targets = null;
-      return this.isDead = true;
+      this._findBase = function() {};
+      this.isDead = true;
+      return this.fire('die');
     };
 
     return Context;
@@ -792,20 +857,35 @@
     __extends(ContextProxy, _super);
 
     function ContextProxy() {
-      return ContextProxy.__super__.constructor.apply(this, arguments);
+      ContextProxy.__super__.constructor.apply(this, arguments);
+      contextDebug("CONTEXT PROXY created " + (this.get("_batmanID")) + " " + this.constructor.name);
+      this.target.on('die', this.die.bind(this));
+      this.componentName = this.target.componentName;
     }
 
-    ContextProxy.prototype.injectContext = function(key, value) {
-      var proxy;
-      proxy = new Batman.DOM.React.ContextProxy(this);
-      proxy.accessor(key, function() {
-        return value;
-      });
-      return proxy;
+    ContextProxy.mixin(Batman.DOM.React.ContextMixin);
+
+    ContextProxy.prototype.baseForKeypath = function(keypath) {
+      contextDebug("CONTEXT PROXY lookup " + (this.get("_batmanID")) + " " + keypath + " " + this.constructor.name);
+      return this.target.baseForKeypath(keypath);
     };
 
     ContextProxy.prototype.die = function() {
-      this._batman = null;
+      var event, _, _ref, _ref1;
+      if ((_ref = this._batman.properties) != null) {
+        _ref.forEach(function(key, property) {
+          return property.die();
+        });
+      }
+      if (this._batman.events) {
+        _ref1 = this._batman.events;
+        for (_ in _ref1) {
+          event = _ref1[_];
+          event.clearHandlers();
+        }
+      }
+      contextDebug("CONTEXT PROXY dying " + (this.get("_batmanID")) + " " + this.constructor.name);
+      this.isDead = true;
       return this.target.die();
     };
 
@@ -813,141 +893,64 @@
 
   })(Batman.Proxy);
 
-  Batman.ContextObserver = (function(_super) {
-    __extends(ContextObserver, _super);
+  Batman.DOM.React.ContextAttributeProxy = (function(_super) {
+    __extends(ContextAttributeProxy, _super);
 
-    ContextObserver.COUNT = 0;
-
-    function ContextObserver(_arg) {
-      this.component = _arg.component, this.target = _arg.target;
-      ContextObserver.__super__.constructor.call(this, {});
-      this.constructor.COUNT += 1;
-      this._logCount();
-      this._properties = [];
-      this.forceUpdate = this._forceUpdate.bind(this);
-      this.on("changed", this.forceUpdate);
+    function ContextAttributeProxy() {
+      return ContextAttributeProxy.__super__.constructor.apply(this, arguments);
     }
 
-    ContextObserver.prototype._targets = function() {
-      var _ref, _ref1;
-      return this._targetArray || (this._targetArray = ((_ref = this.component) != null ? (_ref1 = _ref.props) != null ? _ref1.controller : void 0 : void 0) ? [this.target, this.component.props.controller, Batman.currentApp] : [this.target, Batman.currentApp]);
-    };
+    return ContextAttributeProxy;
 
-    ContextObserver.prototype._forceUpdate = function() {
-      if (this.component.isMounted()) {
-        return this.component.forceUpdate();
-      } else {
-        return reactDebug("Wasn't mounted", this.component);
-      }
-    };
+  })(Batman.DOM.React.ContextProxy);
 
-    ContextObserver.prototype._baseForKeypath = function(keypath) {
-      var segment, segmentPath, target, _i, _j, _len, _len1, _ref, _ref1;
-      segmentPath = "";
-      _ref = keypath.split(".");
-      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-        segment = _ref[_i];
-        segmentPath += segment;
-        _ref1 = this._targets();
-        for (_j = 0, _len1 = _ref1.length; _j < _len1; _j++) {
-          target = _ref1[_j];
-          if (typeof target.get(segmentPath) !== "undefined") {
-            return target;
-          }
-        }
-      }
-      return void 0;
-    };
+  Batman.DOM.React.ContextTargetProxy = (function(_super) {
+    __extends(ContextTargetProxy, _super);
 
-    ContextObserver.prototype.observeProperty = function(prop) {
-      this._logProperties || (this._logProperties = Batman.setImmediate((function(_this) {
-        return function() {
-          if (_this.DEAD) {
-            console.log("Observer was killed");
+    function ContextTargetProxy() {
+      return ContextTargetProxy.__super__.constructor.apply(this, arguments);
+    }
+
+    ContextTargetProxy.wrapAccessor(function(core) {
+      return {
+        get: function(key) {
+          var firstPart, obj, parts;
+          parts = key.split(".");
+          firstPart = parts.shift();
+          if (obj = Batman.get(this._context, firstPart)) {
+            return Batman.get(this._context, key);
           } else {
-            console.log("Now tracking " + _this._properties.length + " properties");
+            return core.get.call(this.target, key);
           }
-          return _this._logProperties = false;
-        };
-      })(this)));
-      if (__indexOf.call(this._properties, prop) >= 0) {
-        return false;
-      }
-      this._properties.push(prop);
-      prop.observe(this.forceUpdate);
-      prop.observe(function(nv, ov) {
-        return reactDebug("forceUpdate because of " + prop.key + " " + (Batman.Filters.truncate(JSON.stringify(ov), 15)) + " -> " + (Batman.Filters.truncate(JSON.stringify(nv), 15)));
-      });
-      return true;
-    };
-
-    ContextObserver.prototype.getContext = function(keypath) {
-      var base, prop, terminal, value;
-      base = this._baseForKeypath(keypath);
-      if (!base) {
-        return;
-      }
-      prop = Batman.Property.forBaseAndKey(base, keypath);
-      if (prop != null) {
-        this.observeProperty(prop);
-      }
-      value = prop != null ? prop.getValue() : void 0;
-      if (Batman.typeOf(value) === "Function") {
-        terminal = new Batman.Keypath(base, keypath).terminalProperty();
-        value = value.bind(terminal.base);
-      }
-      return value;
-    };
-
-    ContextObserver.prototype.setContext = function(keypath, value) {
-      var base, prop, _ref;
-      base = this._baseForKeypath(keypath);
-      if (base != null) {
-        if ((_ref = Batman.Property.forBaseAndKey(base, keypath)) != null) {
-          _ref.setValue(value);
         }
-      } else if (typeof value !== "undefined") {
-        base = this.target;
-        base.set(keypath, value);
-      }
-      prop = Batman.Property.forBaseAndKey(base, keypath);
-      this.observeProperty(prop);
-      return value;
+      };
+    });
+
+    ContextTargetProxy.prototype.die = function() {
+      ContextTargetProxy.__super__.die.apply(this, arguments);
+      return this._targets = null;
     };
 
-    ContextObserver.prototype.die = function() {
-      var property, _i, _len, _ref;
-      if (this.DEAD) {
-        console.warn("This context observer was already killed!");
-        return;
-      }
-      this.DEAD = true;
-      this.constructor.COUNT -= 1;
-      this._logCount();
-      _ref = this._properties;
-      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-        property = _ref[_i];
-        if (property != null) {
-          property.forget(this.forceUpdate);
-        }
-      }
-      this._properties = null;
-      return this.off();
-    };
+    return ContextTargetProxy;
 
-    ContextObserver.prototype._logCount = function() {
-      if (this.constructor._logging) {
-        return;
-      }
-      return this.constructor._logging = Batman.setImmediate((function(_this) {
+  })(Batman.DOM.React.ContextProxy);
+
+  Batman.DOM.React.ContextProxyHash = (function(_super) {
+    __extends(ContextProxyHash, _super);
+
+    function ContextProxyHash() {
+      return ContextProxyHash.__super__.constructor.apply(this, arguments);
+    }
+
+    ContextProxyHash.prototype.forKey = function(key) {
+      return this.getOrSet(key, (function(_this) {
         return function() {
-          console.log("" + _this.constructor.COUNT + " ContextObservers");
-          return _this.constructor._logging = false;
+          return new _this.constructor;
         };
       })(this));
     };
 
-    return ContextObserver;
+    return ContextProxyHash;
 
   })(Batman.Hash);
 
@@ -963,36 +966,51 @@
     }
 
     Descriptor.accessor('toReact', function() {
-      var child, children, props, reactDescriptor, type;
-      reactDescriptor = this.performReactTransforms();
-      type = reactDescriptor.type, props = reactDescriptor.props, children = reactDescriptor.children;
-      if (children != null ? children.length : void 0) {
-        children = (function() {
-          var _i, _len, _results;
-          _results = [];
-          for (_i = 0, _len = children.length; _i < _len; _i++) {
-            child = children[_i];
-            _results.push(this._handleTransformedDescriptor(child, this.context));
-          }
-          return _results;
-        }).call(this);
-      }
-      if (type != null) {
-        return React.DOM[type](props, children);
-      } else {
-        return reactDescriptor;
-      }
+      var plainObj;
+      plainObj = this.get('toObject');
+      return this._invokeOnReact(plainObj);
     });
 
-    Descriptor.prototype.performReactTransforms = function() {
-      var attrArg, bindingClass, bindingName, descriptor, key, keyParts, value, _ref;
-      descriptor = {
+    Descriptor.prototype._invokeOnReact = function(item) {
+      var child, children, member, props, type, _i, _len, _ref, _ref1, _results;
+      if (item instanceof Array) {
+        _results = [];
+        for (_i = 0, _len = item.length; _i < _len; _i++) {
+          member = item[_i];
+          _results.push(this._invokeOnReact(member));
+        }
+        return _results;
+      } else if (((_ref = typeof item) === "string" || _ref === "number" || _ref === "boolean" || _ref === "undefined") || (item == null)) {
+        return item;
+      } else {
+        type = item.type, props = item.props, children = item.children;
+        children = (function() {
+          var _j, _len1, _results1;
+          _results1 = [];
+          for (_j = 0, _len1 = children.length; _j < _len1; _j++) {
+            child = children[_j];
+            _results1.push(this._invokeOnReact(child));
+          }
+          return _results1;
+        }).call(this);
+        return (_ref1 = React.DOM)[type].apply(_ref1, [props].concat(__slice.call(children)));
+      }
+    };
+
+    Descriptor.accessor('toObject', function() {
+      var plainObj;
+      return plainObj = this.performReactTransforms({
         type: this.type,
         props: this.props,
         children: this.children,
         context: this.context
-      };
-      _ref = this.props;
+      });
+    });
+
+    Descriptor.prototype.performReactTransforms = function(descriptor) {
+      var attrArg, bindingClass, bindingName, context, key, keyParts, value, _ref;
+      context = descriptor.context;
+      _ref = descriptor.props;
       for (key in _ref) {
         value = _ref[key];
         if (!(key.substr(0, 5) === "data-")) {
@@ -1019,11 +1037,14 @@
           descriptor = new bindingClass(descriptor, bindingName, value, attrArg).applyBinding();
         }
       }
-      return this._handleTransformedDescriptor(descriptor, this.context);
+      if ((descriptor.context != null) && descriptor.context !== context) {
+        context = descriptor.context;
+      }
+      return this._handleTransformedDescriptor(descriptor, context);
     };
 
     Descriptor.prototype._handleTransformedDescriptor = function(descriptor, context) {
-      var child, _i, _len, _results;
+      var child, _i, _len, _ref, _results;
       if (descriptor instanceof Array) {
         _results = [];
         for (_i = 0, _len = descriptor.length; _i < _len; _i++) {
@@ -1033,8 +1054,21 @@
         return _results;
       } else if (descriptor instanceof Batman.DOM.React.Descriptor) {
         descriptor.context || (descriptor.context = context);
-        return descriptor.get('toReact');
+        return descriptor.get('toObject');
+      } else if (((_ref = typeof descriptor) === "string" || _ref === "number" || _ref === "boolean" || _ref === "undefined") || (descriptor == null)) {
+        return descriptor;
       } else {
+        descriptor.children = (function() {
+          var _j, _len1, _ref1, _results1;
+          _ref1 = descriptor.children;
+          _results1 = [];
+          for (_j = 0, _len1 = _ref1.length; _j < _len1; _j++) {
+            child = _ref1[_j];
+            child.context = context;
+            _results1.push(this._handleTransformedDescriptor(child, context));
+          }
+          return _results1;
+        }).call(this);
         return descriptor;
       }
     };
@@ -1097,23 +1131,28 @@
   }
 
   Batman.ReactMixin = {
-    getInitialState: function() {
-      var _ref1, _ref2;
-      reactDebug("getInitialState " + (((_ref1 = this.constructor) != null ? _ref1.displayName : void 0) || ((_ref2 = this.props) != null ? _ref2.key : void 0)));
-      this._createTopLevelContext();
-      return {};
+    componentWillReceiveProps: function() {
+      return this._createTopLevelContext();
+    },
+    componentWillMount: function() {
+      return this._createTopLevelContext();
     },
     componentWillUnmount: function() {
       if (this._context.component === this) {
-        reactDebug("componentWillUnmount, killing context");
-        return this._context.die();
+        this._context.die();
+        this._context = null;
+        return reactDebug("componentWillUnmount, killing context");
       }
     },
     _createTopLevelContext: function() {
-      return this._context || (this._context = new Batman.DOM.React.Context({
-        controller: this.props.controller,
-        component: this
-      }));
+      var _ref1;
+      if ((this._context == null) || ((_ref1 = this._context) != null ? _ref1.isDead : void 0)) {
+        this._context = new Batman.DOM.React.Context({
+          controller: this.props.controller,
+          component: this
+        });
+        return console.log("CONTEXT assigned " + (this._context.get("_batmanID")));
+      }
     },
     _setupTreeDescriptor: function() {
       this.treeDescriptor = this.renderBatman();
@@ -1121,15 +1160,17 @@
       console.log("observing " + (this.treeDescriptor.get('_batmanID')));
       return this.treeDescriptor.property('toReact').observe((function(_this) {
         return function() {
-          console.log("forceupdate");
           return _this.forceUpdate();
         };
       })(this));
     },
     renderTree: function() {
       var react;
+      this._createTopLevelContext();
       if (!this.treeDescriptor) {
         this._setupTreeDescriptor();
+      } else {
+        this.treeDescriptor.context = this._context;
       }
       react = this.treeDescriptor.get('toReact');
       return react;

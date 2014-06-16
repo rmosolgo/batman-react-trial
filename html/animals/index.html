@@ -7,10 +7,17 @@
     <div class="row">
       <div class="col-xs-4" data-context-canfly='animal.canFly'>
         <a data-route="routes.animals[animal]">
-          <p class="lead text-warning" data-removeclass-text-warning='canfly' data-addclass-text-success='canfly' data-addclass-text-danger='canfly | not'>
+          <p class="lead text-warning"
+            data-removeclass-text-warning='canfly'
+            data-addclass-text-success='canfly'
+            data-addclass-text-danger='canfly | not'
+            >
             <span data-bind='animal.name'></span>
             <span class="text-muted" data-showif='animal.canFly'> (can fly)</span>
             <span class="text-muted" data-hideif='animal.canFly'> (can't fly)</span>
+            &mdash;
+            <span class="text-muted" data-showif='canfly'> (can fly ctx)</span>
+            <span class="text-muted" data-hideif='canfly'> (can't fly ctx)</span>
           </p>
         </a>
       </div>

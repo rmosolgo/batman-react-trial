@@ -63,6 +63,7 @@ class Batman.DOM.React.AbstractBinding
       @value
 
   lookupKeypath: (keypath) ->
+    debugger unless @descriptor.context
     @descriptor.context.get(keypath)
 
   constructor: (@descriptor, @bindingName, @keypath, @attrArg) ->
@@ -127,4 +128,5 @@ class Batman.DOM.React.AbstractBinding
     JSON.parse("[#{segment}]")
 
   safelySetProps: (props) ->
+    @descriptor.props ||= {}
     Batman.mixin(@descriptor.props, props)
