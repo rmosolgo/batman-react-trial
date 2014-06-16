@@ -570,10 +570,8 @@
       var style;
       style = this.descriptor.props.style || {};
       if (shouldShow) {
-        console.log("Showing " + this.descriptor.type + " " + this.descriptor.children + " for " + this.keypath);
         delete style.display;
       } else {
-        console.log("Hiding " + this.descriptor.type + " " + this.descriptor.children + " for " + this.keypath);
         style.display = 'none !important';
       }
       return this.descriptor.props.style = style;
